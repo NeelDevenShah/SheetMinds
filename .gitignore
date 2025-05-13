@@ -1,0 +1,65 @@
+# Environment files
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Logs and debugging
+*.log
+*.out
+*.err
+*.pid
+*.gz
+*.swp
+
+# Data files
+*.csv
+*.tsv
+*.json
+*.db
+*.sqlite
+*.h5
+*.pkl
+
+# Model files
+*.pt
+*.pth
+*.h5
+*.onnx
+*.joblib
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Node.js (if applicable)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Miscellaneous
+*.bak
+*.tmp
+*.old
