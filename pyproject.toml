@@ -1,11 +1,61 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "csv-qa"
+name = "SheetMinds"
 version = "0.1.0"
-description = "Add your description here"
+description = "Agentic AI System for CSV/Excel Data Analysis"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "langchain==0.3.24",
-    "langchain-google-genai==2.1.4",
-    "mysql-connector-python==9.3.0",
+license = {text = "MIT"}
+authors = [
+    {name = "Neel Shah", email = "neeldevenshah@gmail.com"},
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "pandas>=1.5.0",
+    "numpy>=1.21.0",
+    "python-dotenv>=0.19.0",
+    "pydantic>=1.9.0",
+    "PyYAML>=6.0",
+    "typing-extensions>=4.0.0",
+    "openpyxl>=3.0.9",
+    "pyarrow>=6.0.0",
+    "anyio>=3.6.0",
+    "asyncio>=3.4.3",
+    "python-json-logger>=2.0.2",
+    "structlog>=21.1.0",
+    "langchain-google-genai>=0.0.5",  # For Gemini API
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=22.3.0",
+    "isort>=5.10.1",
+    "mypy>=0.910",
+    "flake8>=4.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.18.0",
+    "pytest-cov>=3.0.0",
+    "sphinx>=4.5.0",
+    "sphinx-rtd-theme>=1.0.0",
+]
+
+[project.scripts]
+sheetmind = "sheetmind.cli:main"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\\.pyi?$'
