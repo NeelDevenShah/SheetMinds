@@ -36,7 +36,9 @@ dependencies = [
     "asyncio>=3.4.3",
     "python-json-logger>=2.0.2",
     "structlog>=21.1.0",
-    "langchain-google-genai>=0.0.5",  # For Gemini API
+    "langchain-google-genai>=0.0.5", # For Gemini API
+    "flask>=3.1.1",
+    "flask-cors>=5.0.1",
 ]
 
 [project.optional-dependencies]

@@ -7,12 +7,12 @@ import traceback
 import asyncio
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
+import textwrap
 
 from .base_agent import BaseAgent, AgentResponse
 from ..tools.isolated_python_executor import IsolatedPythonExecutor
 
 logger = logging.getLogger(__name__)
-
 
 class DataAnalysisAgent(BaseAgent):
     """
@@ -53,9 +53,9 @@ class DataAnalysisAgent(BaseAgent):
         # Initialize the isolated Python executor
         self.executor = IsolatedPythonExecutor("data_analysis_sandbox")
         
-        # Load common data analysis libraries in the sandbox
-        # Initialize sandbox environment asynchronously in a separate task
-        asyncio.create_task(self._initialize_sandbox_environment())
+        # We'll initialize the environment later when needed
+        # DO NOT use asyncio.create_task here as it requires a running event loop
+        self.initialized = False
     
     def _create_response(
         self,
@@ -234,121 +234,145 @@ class DataAnalysisAgent(BaseAgent):
         try:
             # Create a basic environment setup script with proper indentation
             setup_script = """
-# Import required libraries
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Any, Optional, Union
-import json
-import io
-import sys
-import traceback
+                        # Import required libraries
+                        import pandas as pd
+                        import numpy as np
+                        from typing import Dict, List, Any, Optional, Union
+                        import json
+                        import io
+                        import sys
+                        import traceback
 
-# Store any helper functions or variables needed for analysis
-class DataAnalysisHelper:
-    @staticmethod
-    def safe_eval(expr: str, local_vars: Dict[str, Any]) -> Any:
-        "Safely evaluate an expression with restricted globals."
-        allowed_globals = {
-            'pd': pd,
-            'np': np,
-            'json': json,
-            'Dict': Dict,
-            'List': List,
-            'Any': Any,
-            'Optional': Optional,
-            'Union': Union,
-            'sys': sys,
-            'traceback': traceback,
-            'io': io
-        }
-        try:
-            return eval(expr, {'__builtins__': {}}, {**allowed_globals, **local_vars})
-        except Exception as e:
-            return f"Error evaluating expression: {str(e)}"
+                        # Store any helper functions or variables needed for analysis
+                        class DataAnalysisHelper:
+                            @staticmethod
+                            def safe_eval(expr: str, local_vars: Dict[str, Any]) -> Any:
+                                "Safely evaluate an expression with restricted globals."
+                                allowed_globals = {
+                                    'pd': pd,
+                                    'np': np,
+                                    'json': json,
+                                    'Dict': Dict,
+                                    'List': List,
+                                    'Any': Any,
+                                    'Optional': Optional,
+                                    'Union': Union,
+                                    'sys': sys,
+                                    'traceback': traceback,
+                                    'io': io
+                                }
+                                try:
+                                    return eval(expr, {'__builtins__': {}}, {**allowed_globals, **local_vars})
+                                except Exception as e:
+                                    return f"Error evaluating expression: {str(e)}"
 
-# Make helper available
-helper = DataAnalysisHelper()
-"""
-            
+                        # Make helper available
+                        helper = DataAnalysisHelper()"""
+            # Dedent the setup script to avoid indentation errors
+            dedented_script = textwrap.dedent(setup_script)
             # Execute the setup script in the sandbox
             result = self.executor.execute_code(
-                code=setup_script,
+                code=dedented_script,
                 source_dir="."
             )
-            
             if result["errors"]:
-                logger.error(f"Failed to initialize sandbox environment: {result['errors']}")
-            
+                self.logger.error(f"Failed to initialize sandbox environment: {result['errors']}")
         except Exception as e:
-            logger.error(f"Error initializing sandbox environment: {str(e)}")
-    
-    async def execute(self, task: str, **kwargs) -> AgentResponse:
+            self.logger.error(f"Error initializing sandbox environment: {str(e)}")
+
+        
+    async def execute(
+        self,
+        task: str,
+        **kwargs
+    ) -> AgentResponse:
         """
         Execute a data analysis task.
+    if query and not task:
+        task = "custom analysis"
+    elif not task and not query:
+        return AgentResponse(
+            success=False,
+            output=None,
+            error="Either 'query' or 'task' parameter is required"
+        )
+    
+    self.logger.info(f"Executing data analysis task: {task}")
+    
+    try:
+        # Make sure the sandbox environment is initialized
+        if not self.initialized:
+            await self._initialize_sandbox_environment()
+            self.initialized = True
         
-        Args:
-            task: The task to perform (e.g., "profile data", "clean data", "analyze data")
-            **kwargs: Additional parameters specific to the task
-            
-        Returns:
-            AgentResponse containing the result of the analysis
-        """
-        self.logger.info(f"Executing data analysis task: {task}")
+        # Route to the appropriate handler based on the task
+        task = task.lower().strip()
         
-        try:
-            # Route to the appropriate handler based on the task
-            task = task.lower().strip()
-            
-            if task == "profile data":
-                return await self.profile_data(**kwargs)
-            elif task == "clean data":
-                return await self._clean_data(**kwargs)
-            elif task == "analyze data":
-                return await self._analyze_data(**kwargs)
-            elif task == "transform data":
-                return await self._transform_data(**kwargs)
-            elif task == "custom analysis":
-                query = kwargs.get("query")
-                if not query:
-                    return AgentResponse(
-                        success=False,
-                        output=None,
-                        error="Custom analysis requires a 'query' parameter"
-                    )
-                
-                return await self._custom_analysis(query, **kwargs)
-            else:
+        if task == "profile data":
+            return await self.profile_data(**kwargs)
+        elif task == "clean data":
+            return await self._clean_data(**kwargs)
+        elif task == "analyze data":
+            return await self._analyze_data(**kwargs)
+        elif task == "transform data":
+            return await self._transform_data(**kwargs)
+        elif task == "custom analysis":
+            query = kwargs.get("query")
+            if not query:
                 return AgentResponse(
                     success=False,
                     output=None,
-                    error=f"Unknown task: {task}"
+                    error="Custom analysis requires a 'query' parameter"
                 )
-                
-        except Exception as e:
-            self.logger.exception(f"Error executing task: {task}")
+            return await self._custom_analysis(query, **kwargs)
+        else:
             return AgentResponse(
                 success=False,
                 output=None,
-                error=f"Error executing task: {str(e)}",
-                metadata={"traceback": self._get_traceback()}
+                error=f"Unknown task: {task}"
             )
     
-    async def _clean_data(self, **kwargs) -> AgentResponse:
-        """
-        Clean the input data based on the provided parameters.
-        
-        Args:
-            **kwargs: Should contain 'data' or 'data_path' and cleaning parameters
+    except Exception as e:
+        self.logger.exception(f"Error executing task: {task}")
+        return AgentResponse(
+            success=False,
+            output=None,
+            error=f"Error executing task: {str(e)}",
+            metadata={"traceback": self._get_traceback()}
+        )
             
         Returns:
             AgentResponse with the cleaned data
         """
         # Implementation for data cleaning
-        return AgentResponse(
-            success=False,
-            output=None,
-            error="Data cleaning not yet implemented"
-        )
+        try:
+            data_path = kwargs.get("data_path")
+            if not data_path:
+                return AgentResponse(
+                    success=False,
+                    output=None,
+                    error="'data_path' parameter is required for data cleaning"
+                )
+            df = await self._load_data(data_path)
+            # Basic cleaning: drop rows with any missing values and remove duplicates
+            cleaned_df = df.dropna().drop_duplicates()
+            # Return a preview of cleaned data and its shape
+            preview = cleaned_df.head(10).to_dict(orient="records")
+            return AgentResponse(
+                success=True,
+                output={
+                    "preview": preview,
+                    "shape": cleaned_df.shape
+                },
+                error=None
+            )
+        except Exception as e:
+            self.logger.exception("Error during data cleaning")
+            return AgentResponse(
+                success=False,
+                output=None,
+                error=f"Data cleaning failed: {str(e)}"
+            )
     
     async def _analyze_data(self, **kwargs) -> AgentResponse:
         """
