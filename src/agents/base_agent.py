@@ -107,15 +107,11 @@ class BaseAgent(ABC):
         Returns:
             bool: True if save was successful, False otherwise
         """
-        try:
-            state = self.get_state()
-            with open(file_path, 'w') as f:
-                json.dump(state, f, indent=2)
-            self.logger.info(f"Saved state to {file_path}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Error saving state: {str(e)}")
-            return False
+        state = self.get_state()
+        with open(file_path, 'w') as f:
+            json.dump(state, f, indent=2)
+        self.logger.info(f"Saved state to {file_path}")
+        return True
     
     @classmethod
     def load_state(cls: Type[T], file_path: str) -> Optional[T]:
@@ -128,21 +124,17 @@ class BaseAgent(ABC):
         Returns:
             An instance of the agent with the loaded state, or None if loading failed
         """
-        try:
-            with open(file_path, 'r') as f:
-                state = json.load(f)
-            
-            agent = cls(
-                agent_id=state['agent_id'],
-                name=state['name'],
-                description=state['description'],
-                config=state.get('config', {})
-            )
-            agent.memory = state.get('memory', {})
-            return agent
-        except Exception as e:
-            logger.error(f"Error loading agent state: {str(e)}")
-            return None
+        with open(file_path, 'r') as f:
+            state = json.load(f)
+        
+        agent = cls(
+            agent_id=state['agent_id'],
+            name=state['name'],
+            description=state['description'],
+            config=state.get('config', {})
+        )
+        agent.memory = state.get('memory', {})
+        return agent
     
     def __str__(self) -> str:
         """Return a string representation of the agent."""
