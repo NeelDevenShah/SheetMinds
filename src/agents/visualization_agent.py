@@ -100,119 +100,110 @@ class VisualizationAgent(BaseAgent):
         Returns:
             AgentResponse containing the visualization
         """
-        try:
-            # Convert data to DataFrame if it's not already
-            if not isinstance(data, pd.DataFrame):
-                data = pd.DataFrame(data)
-            
-            # Validate plot type
-            plot_type = plot_type.lower()
-            if plot_type not in self.config["allowed_plot_types"]:
-                return self._create_response(
-                    success=False,
-                    error=f"Plot type '{plot_type}' is not allowed. "
-                          f"Allowed types: {', '.join(self.config['allowed_plot_types'])}"
-                )
-            
-            # Set default values
-            if figsize is None:
-                figsize = self.config["default_figsize"]
-            
-            if output_format is None:
-                output_format = self.config["output_format"]
-            
-            # Create the plot
-            fig, ax = plt.subplots(figsize=figsize, dpi=self.config["dpi"])
-            
-            # Handle different plot types
-            if plot_type == 'line':
-                data.plot.line(x=x, y=y, ax=ax, **kwargs)
-            elif plot_type == 'bar':
-                data.plot.bar(x=x, y=y, ax=ax, **kwargs)
-            elif plot_type == 'barh':
-                data.plot.barh(x=x, y=y, ax=ax, **kwargs)
-            elif plot_type == 'hist':
-                data.plot.hist(y=y, ax=ax, **kwargs)
-            elif plot_type == 'box':
-                data.plot.box(y=y, ax=ax, **kwargs)
-            elif plot_type in ['kde', 'density']:
-                data.plot.kde(y=y, ax=ax, **kwargs)
-            elif plot_type == 'area':
-                data.plot.area(x=x, y=y, ax=ax, **kwargs)
-            elif plot_type == 'pie':
-                data.plot.pie(y=y, ax=ax, **kwargs)
-            elif plot_type == 'scatter':
-                if x and y:
-                    data.plot.scatter(x=x, y=y, ax=ax, **kwargs)
-                else:
-                    return self._create_response(
-                        success=False,
-                        error="Both x and y must be specified for scatter plot"
-                    )
-            elif plot_type == 'hexbin':
-                if x and y:
-                    data.plot.hexbin(x=x, y=y, ax=ax, **kwargs)
-                else:
-                    return self._create_response(
-                        success=False,
-                        error="Both x and y must be specified for hexbin plot"
-                    )
+        # Convert data to DataFrame if it's not already
+        if not isinstance(data, pd.DataFrame):
+            data = pd.DataFrame(data)
+        
+        # Validate plot type
+        plot_type = plot_type.lower()
+        if plot_type not in self.config["allowed_plot_types"]:
+            return self._create_response(
+                success=False,
+                error=f"Plot type '{plot_type}' is not allowed. "
+                        f"Allowed types: {', '.join(self.config['allowed_plot_types'])}"
+            )
+        
+        # Set default values
+        if figsize is None:
+            figsize = self.config["default_figsize"]
+        
+        if output_format is None:
+            output_format = self.config["output_format"]
+        
+        # Create the plot
+        fig, ax = plt.subplots(figsize=figsize, dpi=self.config["dpi"])
+        
+        # Handle different plot types
+        if plot_type == 'line':
+            data.plot.line(x=x, y=y, ax=ax, **kwargs)
+        elif plot_type == 'bar':
+            data.plot.bar(x=x, y=y, ax=ax, **kwargs)
+        elif plot_type == 'barh':
+            data.plot.barh(x=x, y=y, ax=ax, **kwargs)
+        elif plot_type == 'hist':
+            data.plot.hist(y=y, ax=ax, **kwargs)
+        elif plot_type == 'box':
+            data.plot.box(y=y, ax=ax, **kwargs)
+        elif plot_type in ['kde', 'density']:
+            data.plot.kde(y=y, ax=ax, **kwargs)
+        elif plot_type == 'area':
+            data.plot.area(x=x, y=y, ax=ax, **kwargs)
+        elif plot_type == 'pie':
+            data.plot.pie(y=y, ax=ax, **kwargs)
+        elif plot_type == 'scatter':
+            if x and y:
+                data.plot.scatter(x=x, y=y, ax=ax, **kwargs)
             else:
                 return self._create_response(
                     success=False,
-                    error=f"Unsupported plot type: {plot_type}"
+                    error="Both x and y must be specified for scatter plot"
                 )
-            
-            # Set plot title and labels
-            if title:
-                ax.set_title(title)
-            if xlabel:
-                ax.set_xlabel(xlabel)
-            if ylabel:
-                ax.set_ylabel(ylabel)
-            
-            # Adjust layout
-            plt.tight_layout()
-            
-            # Handle output format
-            result = None
-            if output_format == 'figure':
-                result = fig
-            elif output_format == 'base64':
-                buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
-                buf.seek(0)
-                result = base64.b64encode(buf.read()).decode('utf-8')
-                buf.close()
-            elif output_format == 'bytes':
-                buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
-                buf.seek(0)
-                result = buf.read()
-                buf.close()
-            elif output_format == 'file':
-                output_file = self.config["output_file"]
-                fig.savefig(output_file, dpi=self.config["dpi"], bbox_inches='tight')
-                result = output_file
-            
-            plt.close(fig)
-            
-            return self._create_response(
-                success=True,
-                result={
-                    'figure': result,
-                    'format': output_format,
-                    'plot_type': plot_type
-                }
-            )
-            
-        except Exception as e:
-            logger.exception(f"Error creating {plot_type} plot")
+        elif plot_type == 'hexbin':
+            if x and y:
+                data.plot.hexbin(x=x, y=y, ax=ax, **kwargs)
+            else:
+                return self._create_response(
+                    success=False,
+                    error="Both x and y must be specified for hexbin plot"
+                )
+        else:
             return self._create_response(
                 success=False,
-                error=f"Error creating visualization: {str(e)}",
-                traceback=self._get_traceback()
+                error=f"Unsupported plot type: {plot_type}"
             )
+        
+        # Set plot title and labels
+        if title:
+            ax.set_title(title)
+        if xlabel:
+            ax.set_xlabel(xlabel)
+        if ylabel:
+            ax.set_ylabel(ylabel)
+        
+        # Adjust layout
+        plt.tight_layout()
+        
+        # Handle output format
+        result = None
+        if output_format == 'figure':
+            result = fig
+        elif output_format == 'base64':
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
+            buf.seek(0)
+            result = base64.b64encode(buf.read()).decode('utf-8')
+            buf.close()
+        elif output_format == 'bytes':
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
+            buf.seek(0)
+            result = buf.read()
+            buf.close()
+        elif output_format == 'file':
+            output_file = self.config["output_file"]
+            fig.savefig(output_file, dpi=self.config["dpi"], bbox_inches='tight')
+            result = output_file
+        
+        plt.close(fig)
+        
+        return self._create_response(
+            success=True,
+            result={
+                'figure': result,
+                'format': output_format,
+                'plot_type': plot_type
+            }
+        )
     
     async def create_correlation_heatmap(
         self,
@@ -235,86 +226,77 @@ class VisualizationAgent(BaseAgent):
         Returns:
             AgentResponse containing the correlation heatmap
         """
-        try:
-            # Convert data to DataFrame if it's not already
-            if not isinstance(data, pd.DataFrame):
-                data = pd.DataFrame(data)
-            
-            # Calculate correlation matrix
-            corr = data.corr(method=method, numeric_only=True)
-            
-            # Set default values
-            if figsize is None:
-                # Make the figure larger for better readability
-                size = max(8, len(corr.columns) * 0.8)
-                figsize = (size, size)
-            
-            if output_format is None:
-                output_format = self.config["output_format"]
-            
-            # Create the plot
-            fig, ax = plt.subplots(figsize=figsize, dpi=self.config["dpi"])
-            
-            # Create heatmap
-            sns.heatmap(
-                corr,
-                annot=True,
-                fmt=".2f",
-                cmap='coolwarm',
-                center=0,
-                square=True,
-                linewidths=0.5,
-                cbar_kws={"shrink": 0.8},
-                ax=ax,
-                **kwargs
-            )
-            
-            # Rotate x-axis labels for better readability
-            plt.xticks(rotation=45, ha='right')
-            
-            # Adjust layout
-            plt.tight_layout()
-            
-            # Handle output format
-            result = None
-            if output_format == 'figure':
-                result = fig
-            elif output_format == 'base64':
-                buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
-                buf.seek(0)
-                result = base64.b64encode(buf.read()).decode('utf-8')
-                buf.close()
-            elif output_format == 'bytes':
-                buf = io.BytesIO()
-                fig.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
-                buf.seek(0)
-                result = buf.read()
-                buf.close()
-            elif output_format == 'file':
-                output_file = self.config["output_file"].replace('.png', '_corr.png')
-                fig.savefig(output_file, dpi=self.config["dpi"], bbox_inches='tight')
-                result = output_file
-            
-            plt.close(fig)
-            
-            return self._create_response(
-                success=True,
-                result={
-                    'figure': result,
-                    'format': output_format,
-                    'plot_type': 'correlation_heatmap',
-                    'correlation_matrix': corr.to_dict()
-                }
-            )
-            
-        except Exception as e:
-            logger.exception("Error creating correlation heatmap")
-            return self._create_response(
-                success=False,
-                error=f"Error creating correlation heatmap: {str(e)}",
-                traceback=self._get_traceback()
-            )
+        # Convert data to DataFrame if it's not already
+        if not isinstance(data, pd.DataFrame):
+            data = pd.DataFrame(data)
+        
+        # Calculate correlation matrix
+        corr = data.corr(method=method, numeric_only=True)
+        
+        # Set default values
+        if figsize is None:
+            # Make the figure larger for better readability
+            size = max(8, len(corr.columns) * 0.8)
+            figsize = (size, size)
+        
+        if output_format is None:
+            output_format = self.config["output_format"]
+        
+        # Create the plot
+        fig, ax = plt.subplots(figsize=figsize, dpi=self.config["dpi"])
+        
+        # Create heatmap
+        sns.heatmap(
+            corr,
+            annot=True,
+            fmt=".2f",
+            cmap='coolwarm',
+            center=0,
+            square=True,
+            linewidths=0.5,
+            cbar_kws={"shrink": 0.8},
+            ax=ax,
+            **kwargs
+        )
+        
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45, ha='right')
+        
+        # Adjust layout
+        plt.tight_layout()
+        
+        # Handle output format
+        result = None
+        if output_format == 'figure':
+            result = fig
+        elif output_format == 'base64':
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
+            buf.seek(0)
+            result = base64.b64encode(buf.read()).decode('utf-8')
+            buf.close()
+        elif output_format == 'bytes':
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
+            buf.seek(0)
+            result = buf.read()
+            buf.close()
+        elif output_format == 'file':
+            output_file = self.config["output_file"].replace('.png', '_corr.png')
+            fig.savefig(output_file, dpi=self.config["dpi"], bbox_inches='tight')
+            result = output_file
+        
+        plt.close(fig)
+        
+        return self._create_response(
+            success=True,
+            result={
+                'figure': result,
+                'format': output_format,
+                'plot_type': 'correlation_heatmap',
+                'correlation_matrix': corr.to_dict()
+            }
+        )
     
     async def create_pair_plot(
         self,
@@ -343,89 +325,80 @@ class VisualizationAgent(BaseAgent):
         Returns:
             AgentResponse containing the pair plot
         """
-        try:
-            # Convert data to DataFrame if it's not already
-            if not isinstance(data, pd.DataFrame):
-                data = pd.DataFrame(data)
-            
-            if output_format is None:
-                output_format = self.config["output_format"]
-            
-            # Limit the number of variables for performance
-            if vars is None:
-                # Use only numeric columns
-                numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
-                vars = numeric_cols[:6]  # Limit to first 6 numeric columns
-                if len(numeric_cols) > 6:
-                    logger.warning(f"Using first 6 of {len(numeric_cols)} numeric columns for pair plot")
-            
-            if not vars or len(vars) < 2:
-                return self._create_response(
-                    success=False,
-                    error="At least 2 numeric variables are required for pair plot"
-                )
-            
-            # Sample data if too large for better performance
-            plot_data = data
-            if len(plot_data) > self.config["max_points"]:
-                plot_data = plot_data.sample(n=self.config["max_points"], random_state=42)
-                logger.warning(f"Sampled {self.config['max_points']} points out of {len(data)} for pair plot")
-            
-            # Create the pair plot
-            pair_grid = sns.pairplot(
-                plot_data,
-                vars=vars,
-                hue=hue,
-                diag_kind=diag_kind,
-                height=height,
-                aspect=aspect,
-                plot_kws={"s": 15, "alpha": 0.7, "edgecolor": "k"},
-                diag_kws={"edgecolor": "k"},
-                **kwargs
-            )
-            
-            # Adjust title and labels
-            pair_grid.fig.suptitle("Pair Plot", y=1.02)
-            
-            # Handle output format
-            result = None
-            if output_format == 'figure':
-                result = pair_grid.fig
-            else:
-                # For other formats, we need to save to a buffer first
-                buf = io.BytesIO()
-                pair_grid.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
-                buf.seek(0)
-                
-                if output_format == 'base64':
-                    result = base64.b64encode(buf.read()).decode('utf-8')
-                elif output_format == 'bytes':
-                    result = buf.read()
-                elif output_format == 'file':
-                    output_file = self.config["output_file"].replace('.png', '_pairplot.png')
-                    with open(output_file, 'wb') as f:
-                        f.write(buf.getvalue())
-                    result = output_file
-                
-                buf.close()
-            
-            plt.close(pair_grid.fig)
-            
-            return self._create_response(
-                success=True,
-                result={
-                    'figure': result,
-                    'format': output_format,
-                    'plot_type': 'pair_plot',
-                    'variables': vars,
-                    'hue': hue
-                }
-            )
-            
-        except Exception as e:
-            logger.exception("Error creating pair plot")
+        # Convert data to DataFrame if it's not already
+        if not isinstance(data, pd.DataFrame):
+            data = pd.DataFrame(data)
+        
+        if output_format is None:
+            output_format = self.config["output_format"]
+        
+        # Limit the number of variables for performance
+        if vars is None:
+            # Use only numeric columns
+            numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
+            vars = numeric_cols[:6]  # Limit to first 6 numeric columns
+            if len(numeric_cols) > 6:
+                logger.warning(f"Using first 6 of {len(numeric_cols)} numeric columns for pair plot")
+        
+        if not vars or len(vars) < 2:
             return self._create_response(
                 success=False,
-                error=f"Error creating pair plot: {str(e)}",
-                traceback=self._get_traceback()
+                error="At least 2 numeric variables are required for pair plot"
             )
+        
+        # Sample data if too large for better performance
+        plot_data = data
+        if len(plot_data) > self.config["max_points"]:
+            plot_data = plot_data.sample(n=self.config["max_points"], random_state=42)
+            logger.warning(f"Sampled {self.config['max_points']} points out of {len(data)} for pair plot")
+        
+        # Create the pair plot
+        pair_grid = sns.pairplot(
+            plot_data,
+            vars=vars,
+            hue=hue,
+            diag_kind=diag_kind,
+            height=height,
+            aspect=aspect,
+            plot_kws={"s": 15, "alpha": 0.7, "edgecolor": "k"},
+            diag_kws={"edgecolor": "k"},
+            **kwargs
+        )
+        
+        # Adjust title and labels
+        pair_grid.fig.suptitle("Pair Plot", y=1.02)
+        
+        # Handle output format
+        result = None
+        if output_format == 'figure':
+            result = pair_grid.fig
+        else:
+            # For other formats, we need to save to a buffer first
+            buf = io.BytesIO()
+            pair_grid.savefig(buf, format='png', dpi=self.config["dpi"], bbox_inches='tight')
+            buf.seek(0)
+            
+            if output_format == 'base64':
+                result = base64.b64encode(buf.read()).decode('utf-8')
+            elif output_format == 'bytes':
+                result = buf.read()
+            elif output_format == 'file':
+                output_file = self.config["output_file"].replace('.png', '_pairplot.png')
+                with open(output_file, 'wb') as f:
+                    f.write(buf.getvalue())
+                result = output_file
+            
+            buf.close()
+        
+        plt.close(pair_grid.fig)
+        
+        return self._create_response(
+            success=True,
+            result={
+                'figure': result,
+                'format': output_format,
+                'plot_type': 'pair_plot',
+                'variables': vars,
+                'hue': hue
+            }
+        )

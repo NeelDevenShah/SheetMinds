@@ -70,40 +70,31 @@ class FormulaAgent(BaseAgent):
         Returns:
             AgentResponse containing the result of the formula evaluation
         """
-        try:
-            # Remove leading '=' if present
-            if formula.startswith('='):
-                formula = formula[1:]
-            
-            # Validate formula length
-            if len(formula) > self.config["max_formula_length"]:
-                return self._create_response(
-                    success=False,
-                    error=f"Formula exceeds maximum length of {self.config['max_formula_length']} characters"
-                )
-            
-            # Prepare the evaluation context
-            eval_globals = self._get_safe_globals()
-            eval_locals = {"data": data}
-            
-            if context:
-                eval_locals.update(context)
-            
-            # Evaluate the formula in a restricted environment
-            result = eval(formula, eval_globals, eval_locals)
-            
-            return self._create_response(
-                success=True,
-                result=result
-            )
-            
-        except Exception as e:
-            logger.exception(f"Error evaluating formula: {formula}")
+        # Remove leading '=' if present
+        if formula.startswith('='):
+            formula = formula[1:]
+        
+        # Validate formula length
+        if len(formula) > self.config["max_formula_length"]:
             return self._create_response(
                 success=False,
-                error=f"Error evaluating formula: {str(e)}",
-                traceback=self._get_traceback()
+                error=f"Formula exceeds maximum length of {self.config['max_formula_length']} characters"
             )
+        
+        # Prepare the evaluation context
+        eval_globals = self._get_safe_globals()
+        eval_locals = {"data": data}
+        
+        if context:
+            eval_locals.update(context)
+        
+        # Evaluate the formula in a restricted environment
+        result = eval(formula, eval_globals, eval_locals)
+        
+        return self._create_response(
+            success=True,
+            result=result
+        )
     
     def _get_safe_globals(self) -> Dict[str, Any]:
         """
@@ -215,14 +206,8 @@ class FormulaAgent(BaseAgent):
         Returns:
             AgentResponse indicating if the formula is valid
         """
-        try:
-            # Try to compile the formula
-            if formula.startswith('='):
-                formula = formula[1:]
-            compile(formula, "<string>", "eval")
-            return self._create_response(success=True)
-        except Exception as e:
-            return self._create_response(
-                success=False,
-                error=f"Invalid formula: {str(e)}"
-            )
+        # Try to compile the formula
+        if formula.startswith('='):
+            formula = formula[1:]
+        compile(formula, "<string>", "eval")
+        return self._create_response(success=True)

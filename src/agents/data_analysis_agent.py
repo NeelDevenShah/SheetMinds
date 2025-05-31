@@ -5,19 +5,35 @@ import logging
 import sys
 import traceback
 import asyncio
-from typing import Dict, Any, List, Optional, Union
+import uuid
+from typing import Dict, Any, List, Optional, Union, Tuple
 from pathlib import Path
 import textwrap
+import tempfile
+import shutil
+import os
 
 from .base_agent import BaseAgent, AgentResponse
 from ..tools.isolated_python_executor import IsolatedPythonExecutor
+from ..llm.gemini_client import GeminiClient, CodeGenerationResult
 
 logger = logging.getLogger(__name__)
+
+
+class DataAnalysisError(Exception):
+    """Custom exception for data analysis errors."""
+    pass
+
+
+class CodeExecutionError(Exception):
+    """Custom exception for code execution errors."""
+    pass
 
 class DataAnalysisAgent(BaseAgent):
     """
     Specialized agent for performing data analysis tasks on tabular data.
     Handles tasks like data profiling, statistical analysis, and data cleaning.
+    Uses Gemini for code generation and isolated execution for safety.
     """
     
     def __init__(self, 
@@ -43,6 +59,8 @@ class DataAnalysisAgent(BaseAgent):
             "default_encoding": "utf-8",
             "sandbox_timeout": 300,  # seconds
             "sandbox_memory_limit_mb": 1024,
+            "max_code_execution_attempts": 3,
+            "max_code_length": 5000,
         }
         
         if config:
@@ -53,9 +71,12 @@ class DataAnalysisAgent(BaseAgent):
         # Initialize the isolated Python executor
         self.executor = IsolatedPythonExecutor("data_analysis_sandbox")
         
-        # We'll initialize the environment later when needed
-        # DO NOT use asyncio.create_task here as it requires a running event loop
-        self.initialized = False
+        # Initialize Gemini client
+        self.llm_client = GeminiClient()
+        
+        # Cache for storing loaded data
+        self._data_cache = {}
+        self.initialized = True
     
     def _create_response(
         self,
@@ -98,7 +119,7 @@ class DataAnalysisAgent(BaseAgent):
     
     async def _load_data(self, file_path: str, **kwargs) -> pd.DataFrame:
         """
-        Load data from a file into a pandas DataFrame.
+        Load data from a file into a pandas DataFrame with caching.
         
         Args:
             file_path: Path to the data file
@@ -108,15 +129,24 @@ class DataAnalysisAgent(BaseAgent):
             Loaded DataFrame
             
         Raises:
-            ValueError: If the file type is not supported or the file is too large
-            Exception: For other loading errors
+            DataAnalysisError: If there's an error loading the data
         """
+        cache_key = f"{file_path}_{str(kwargs)}"
+        
+        # Return cached data if available
+        if cache_key in self._data_cache:
+            return self._data_cache[cache_key]
+            
         file_path = Path(file_path)
         
+        # Check file exists
+        if not file_path.exists():
+            raise DataAnalysisError(f"File not found: {file_path}")
+            
         # Check file extension
         file_ext = file_path.suffix.lower()[1:]  # Remove the dot
         if file_ext not in self.config["allowed_file_types"]:
-            raise ValueError(
+            raise DataAnalysisError(
                 f"Unsupported file type: {file_ext}. "
                 f"Supported types: {', '.join(self.config['allowed_file_types'])}"
             )
@@ -124,24 +154,372 @@ class DataAnalysisAgent(BaseAgent):
         # Check file size
         file_size_mb = file_path.stat().st_size / (1024 * 1024)
         if file_size_mb > self.config["max_file_size_mb"]:
-            raise ValueError(
+            raise DataAnalysisError(
                 f"File size ({file_size_mb:.2f} MB) exceeds the maximum allowed size "
                 f"({self.config['max_file_size_mb']} MB)"
             )
         
         # Read the file based on its type
-        try:
-            if file_ext == 'csv':
-                return pd.read_csv(file_path, **kwargs)
-            elif file_ext in ('xlsx', 'xls'):
-                return pd.read_excel(file_path, **kwargs)
-            elif file_ext == 'parquet':
-                return pd.read_parquet(file_path, **kwargs)
+        if file_ext == 'csv':
+            df = pd.read_csv(file_path, **kwargs)
+        elif file_ext in ('xlsx', 'xls'):
+            df = pd.read_excel(file_path, **kwargs)
+        elif file_ext == 'parquet':
+            df = pd.read_parquet(file_path, **kwargs)
+        else:
+            raise DataAnalysisError(f"Unhandled file type: {file_ext}")
+            
+        # Cache the loaded data
+        self._data_cache[cache_key] = df
+        return df
+    
+    async def _get_data_preview(self, df: pd.DataFrame, max_rows: int = 5) -> Dict[str, Any]:
+        """Create a preview of the data for code generation.
+        
+        Args:
+            df: DataFrame to create preview for
+            max_rows: Maximum number of rows to include in preview
+            
+        Returns:
+            Dictionary with data preview
+        """
+        preview = {
+            "columns": list(df.columns),
+            "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
+            "sample_data": df.head(max_rows).to_dict(orient='records'),
+            "num_rows": len(df),
+            "num_columns": len(df.columns),
+            "missing_values": df.isnull().sum().to_dict(),
+        }
+        
+        # Add basic statistics for numeric columns
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        if not numeric_cols.empty:
+            preview["numeric_stats"] = df[numeric_cols].describe().to_dict()
+            
+        return preview
+        
+    async def _generate_analysis_code(
+        self,
+        query: str,
+        data_preview: Dict[str, Any],
+        max_attempts: int = 3
+    ) -> CodeGenerationResult:
+        """Generate analysis code using Gemini.
+        
+        Args:
+            query: User's query about the data
+            data_preview: Preview of the data for context
+            max_attempts: Maximum number of generation attempts
+            
+        Returns:
+            CodeGenerationResult containing the generated code and metadata
+        """
+        from src.llm.gemini_client import CodeGenerationResult
+        
+        attempt = 0
+        last_error = "Unknown error"
+        
+        while attempt < max_attempts:
+            self.logger.info(f"Generating analysis code (attempt {attempt + 1}/{max_attempts})...")
+            result = await self.llm_client.generate_analysis_code(
+                query=query,
+                data_preview=data_preview
+            )
+            
+            if not hasattr(result, 'success') or not hasattr(result, 'code'):
+                last_error = f"Unexpected result format from code generation: {result}"
+                self.logger.error(last_error)
+                attempt += 1
+                continue
+            
+            if result.success and result.code:
+                self.logger.info("Code generation successful")
+                # Validate the generated code
+                if len(result.code) > self.config["max_code_length"]:
+                    error_msg = f"Generated code is too long ({len(result.code)} > {self.config['max_code_length']})"
+                    self.logger.error(error_msg)
+                    return CodeGenerationResult(
+                        success=False,
+                        error=error_msg
+                    )
+                    
+                # Ensure the code has the required result variable
+                if 'result = ' not in result.code and 'return ' not in result.code:
+                    self.logger.info("Adding default return statement to generated code")
+                    result.code += "\nresult = df"  # Default to returning the dataframe
+                    
+                return result
+            
+            last_error = getattr(result, 'error', 'No error message provided')
+            self.logger.warning(f"Code generation failed: {last_error}")
+                
+            attempt += 1
+            if attempt < max_attempts:
+                self.logger.warning(f"Retrying code generation (attempt {attempt + 1}/{max_attempts})...")
+            
+        error_msg = f"Failed to generate valid code after {max_attempts} attempts: {last_error}"
+        self.logger.error(error_msg)
+        return CodeGenerationResult(
+            success=False,
+            error=error_msg
+        )
+    
+    async def _explain_results(
+        self,
+        query: str,
+        code: str,
+        result: Any,
+        data_preview: Dict[str, Any]
+    ) -> str:
+        """Generate a natural language explanation of the analysis results.
+        
+        Args:
+            query: The original user query
+            code: The generated analysis code
+            result: The result of executing the code
+            data_preview: Preview of the input data
+            
+        Returns:
+            A natural language explanation of the results
+        """
+        self.logger.info("Generating explanation for analysis results...")
+        
+        # Convert the result to a string representation if it's not already
+        if hasattr(result, 'to_string'):
+            result_str = result.to_string()
+        elif isinstance(result, (dict, list, pd.DataFrame, pd.Series, np.ndarray)):
+            result_str = str(result)
+        else:
+            result_str = str(result)
+        
+        # Generate the explanation using the LLM
+        explanation = await self.llm_client.explain_results(
+            query=query,
+            code=code,
+            execution_result=result_str,
+            data_preview=data_preview
+        )
+        
+        return explanation or "No explanation available."
+    
+    async def _execute_analysis_code(
+        self,
+        code: str,
+        df: pd.DataFrame,
+        max_attempts: int = 3
+    ) -> Dict[str, Any]:
+        """Execute the generated analysis code in an isolated environment.
+        
+        Args:
+            code: Python code to execute
+            df: DataFrame to analyze
+            max_attempts: Maximum number of execution attempts
+            
+        Returns:
+            Dictionary containing the execution results with keys:
+            - success: bool indicating if execution was successful
+            - result: the output of the analysis (if successful)
+            - error: error message (if execution failed)
+        """
+        # Create a temporary directory for the execution
+        import tempfile
+        import json
+        from pathlib import Path
+        
+        temp_dir = Path(tempfile.mkdtemp(prefix="analysis_"))
+        
+        # Create a dictionary to store the data
+        data_dict = df.to_dict(orient='records')
+        
+        # Create the execution script with the data embedded
+        script = """
+print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+print("AI GENERATED CODE EXECUTION STARTED")
+print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+import pandas as pd
+import numpy as np
+import json
+import traceback
+
+
+# Load the data from the embedded JSON
+data = {data_dict}
+df = pd.DataFrame(data)
+
+# User's analysis code
+{code}
+    
+# Ensure result is defined
+if 'result' not in locals() and 'result' not in globals():
+    result = df
+
+# Convert result to a serializable format
+if hasattr(result, 'to_dict'):
+    if hasattr(result, 'index'):
+        if hasattr(result, 'reset_index'):
+            result = result.reset_index()
+        if hasattr(result, 'to_dict'):
+            output = result.to_dict(orient='records' if hasattr(result, 'columns') else None)
+    else:
+        output = result.to_dict()
+elif isinstance(result, (np.ndarray, list, tuple)):
+    output = result.tolist() if hasattr(result, 'tolist') else list(result)
+elif isinstance(result, (str, int, float, bool)) or result is None:
+    output = result
+else:
+    output = str(result)
+
+# Ensure the output is JSON serializable
+def make_serializable(obj):
+    if isinstance(obj, (np.integer, int, np.int64)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, float, np.float64)):
+        return float(obj)
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif hasattr(obj, 'item') and callable(getattr(obj, 'item')):
+        return obj.item()
+    elif isinstance(obj, (list, tuple)):
+        return [make_serializable(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {{k: make_serializable(v) for k, v in obj.items()}}
+    return str(obj)
+
+# Apply serialization
+if output is not None:
+    if isinstance(output, (dict, list, tuple)):
+        output = make_serializable(output)
+
+# Save the output
+with open('result.json', 'w') as f:
+    json.dump(output, f, default=str)
+
+print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+print('AI GENERATED CODE EXECUTION COMPLETED')
+print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+    
+""".format(data_dict=repr(data_dict), code=code)
+        # Save the script
+        script_path = temp_dir / "analysis_script.py"
+        script_path.write_text(script)
+        
+        # Execute the script
+        self.logger.info("Executing analysis script...")
+        exec_result = self.executor.execute_code(
+            code=script,
+            source_dir=str(temp_dir)
+        )
+        
+        if exec_result.get("status") == "executed" and not exec_result.get("errors"):
+            # Load the result
+            result_path = "result.json"
+            if os.path.exists(result_path):
+                with open(result_path, 'r') as f:
+                    output = json.load(f)
+                    
+                # Delete the file at the result path if exists
+                if os.path.exists(result_path):
+                    os.remove(result_path)
+                    print('RESULT FILE REMOVED')
+                
+                return {
+                    "success": True,
+                    "result": output,
+                    "error": None
+                }
             else:
-                raise ValueError(f"Unhandled file type: {file_ext}")
-        except Exception as e:
-            self.logger.error(f"Error loading {file_path}: {str(e)}")
-            raise
+                return {
+                    "success": False,
+                    "result": None,
+                    "error": "No result file was generated"
+                }
+        else:
+            error_msg = exec_result.get("errors", "Unknown execution error")
+            if not isinstance(error_msg, str):
+                error_msg = str(error_msg)
+            return {
+                "success": False,
+                "result": None,
+                "error": f"Execution error: {error_msg}"
+            }
+
+    async def analyze_data(
+        self,
+        query: str,
+        data_path: str,
+        **kwargs
+    ) -> AgentResponse:
+        """
+        Analyze data based on the user's query using AI-generated code.
+        
+        Args:
+            query: The user's question or analysis request
+            data_path: Path to the data file
+            **kwargs: Additional arguments for data loading
+            
+        Returns:
+            AgentResponse with the analysis results
+        """
+        self.logger.info(f"Analyzing data from {data_path} for query: {query}")
+        
+        self.logger.info("Loading data...")
+        # Load the data
+        df = await self._load_data(data_path, **kwargs)
+        self.logger.info(f"Loaded data with shape: {df.shape}")
+        
+        # Create a preview of the data for code generation
+        self.logger.info("Creating data preview...")
+        data_preview = await self._get_data_preview(df)
+        
+        # Generate analysis code
+        self.logger.info("Generating analysis code...")
+        result = await self._generate_analysis_code(
+            query=query,
+            data_preview=data_preview
+        )
+        
+        if not result.success:
+            error_msg = f"Failed to generate analysis code: {result.error}"
+            self.logger.error(error_msg)
+            raise CodeExecutionError(error_msg)
+            
+        code = result.code
+        explanation = result.explanation or "No explanation provided"
+        
+        self.logger.info("Generated analysis code successfully")
+        
+        # Execute the generated code
+        self.logger.info("Executing analysis code...")
+        
+        execution_result = await self._execute_analysis_code(code, df)
+        self.logger.info(f"Code execution completed. Success: {execution_result['success']}")
+        
+        if not execution_result['success']:
+            error_msg = f"Error executing analysis: {execution_result['error']}"
+            self.logger.error(error_msg)
+            raise CodeExecutionError(error_msg)
+        
+        # Get the explanation for the results
+        explanation = ""
+        self.logger.info("Generating explanation for results...")
+        explanation = await self._explain_results(query, code, execution_result['result'], data_preview)
+        self.logger.info("Explanation generated successfully")
+
+        # Return the results as an AgentResponse
+        return AgentResponse(
+            success=True,
+            output={
+                "result": execution_result['result'],
+                "code": code,
+                "explanation": explanation,
+                "data_preview": data_preview
+            },
+            error=None
+        )
     
     async def profile_data(
         self,
@@ -162,125 +540,113 @@ class DataAnalysisAgent(BaseAgent):
         """
         self.logger.info(f"Profiling data from {data_path}")
         
-        try:
-            # Load the data
-            df = await self._load_data(data_path, **kwargs)
+        # Load the data
+        df = await self._load_data(data_path, **kwargs)
+        
+        if sample_size is None:
+            sample_size = self.config.get("profile_sample_size", 1000)
             
-            if sample_size is None:
-                sample_size = self.config.get("profile_sample_size", 1000)
-                
-            if sample_size and len(df) > sample_size:
-                df = df.sample(min(sample_size, len(df)))
-            
-            # Basic info
-            profile = {
-                "file_path": str(data_path),
-                "num_rows": len(df),
-                "num_columns": len(df.columns),
-                "columns": list(df.columns),
-                "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-                "missing_values": df.isnull().sum().to_dict(),
-                "missing_percentage": (df.isnull().mean() * 100).round(2).to_dict(),
-            }
-            
-            # Numeric columns statistics
-            numeric_cols = df.select_dtypes(include=['number']).columns
-            if not numeric_cols.empty:
-                profile["numeric_stats"] = df[numeric_cols].describe(
-                    percentiles=[.05, .25, .5, .75, .95]
-                ).to_dict()
-            
-            # Categorical columns statistics
-            cat_cols = df.select_dtypes(include=['object', 'category']).columns
-            if not cat_cols.empty:
-                profile["categorical_stats"] = {}
-                for col in cat_cols:
-                    value_counts = df[col].value_counts()
-                    profile["categorical_stats"][col] = {
-                        "unique_values": value_counts.count(),
-                        "top_values": value_counts.head(10).to_dict(),
-                        "freq": (value_counts / len(df)).mul(100).round(2).head(10).to_dict()
-                    }
-            
-            # Memory usage
-            profile["memory_usage"] = {
-                "total_bytes": int(df.memory_usage(deep=True).sum()),
-                "by_column": df.memory_usage(deep=True).to_dict(),
-                "total_mb": round(df.memory_usage(deep=True).sum() / (1024 * 1024), 2)
-            }
-            
-            # Sample data
-            profile["sample_data"] = {
-                "head": df.head(5).to_dict(orient='records'),
-                "tail": df.tail(5).to_dict(orient='records')
-            }
-            
-            return self._create_response(
-                success=True,
-                result={"profile": profile}
-            )
-            
-        except Exception as e:
-            self.logger.exception(f"Error profiling data from {data_path}")
-            return self._create_response(
-                success=False,
-                error=f"Error profiling data: {str(e)}",
-                traceback=self._get_traceback()
-            )
-    
+        if sample_size and len(df) > sample_size:
+            df = df.sample(min(sample_size, len(df)))
+        
+        # Basic info
+        profile = {
+            "file_path": str(data_path),
+            "num_rows": len(df),
+            "num_columns": len(df.columns),
+            "columns": list(df.columns),
+            "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
+            "missing_values": df.isnull().sum().to_dict(),
+            "missing_percentage": (df.isnull().mean() * 100).round(2).to_dict(),
+        }
+        
+        # Numeric columns statistics
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        if not numeric_cols.empty:
+            profile["numeric_stats"] = df[numeric_cols].describe(
+                percentiles=[.05, .25, .5, .75, .95]
+            ).to_dict()
+        
+        # Categorical columns statistics
+        cat_cols = df.select_dtypes(include=['object', 'category']).columns
+        if not cat_cols.empty:
+            profile["categorical_stats"] = {}
+            for col in cat_cols:
+                value_counts = df[col].value_counts()
+                profile["categorical_stats"][col] = {
+                    "unique_values": value_counts.count(),
+                    "top_values": value_counts.head(10).to_dict(),
+                    "freq": (value_counts / len(df)).mul(100).round(2).head(10).to_dict()
+                }
+        
+        # Memory usage
+        profile["memory_usage"] = {
+            "total_bytes": int(df.memory_usage(deep=True).sum()),
+            "by_column": df.memory_usage(deep=True).to_dict(),
+            "total_mb": round(df.memory_usage(deep=True).sum() / (1024 * 1024), 2)
+        }
+        
+        # Sample data
+        profile["sample_data"] = {
+            "head": df.head(5).to_dict(orient='records'),
+            "tail": df.tail(5).to_dict(orient='records')
+        }
+        
+        return self._create_response(
+            success=True,
+            result={"profile": profile}
+        )
+
     async def _initialize_sandbox_environment(self) -> None:
         """Initialize the sandbox environment with required libraries."""
         # This will be called during initialization to set up the sandbox
-        try:
-            # Create a basic environment setup script with proper indentation
-            setup_script = """
-                        # Import required libraries
-                        import pandas as pd
-                        import numpy as np
-                        from typing import Dict, List, Any, Optional, Union
-                        import json
-                        import io
-                        import sys
-                        import traceback
 
-                        # Store any helper functions or variables needed for analysis
-                        class DataAnalysisHelper:
-                            @staticmethod
-                            def safe_eval(expr: str, local_vars: Dict[str, Any]) -> Any:
-                                "Safely evaluate an expression with restricted globals."
-                                allowed_globals = {
-                                    'pd': pd,
-                                    'np': np,
-                                    'json': json,
-                                    'Dict': Dict,
-                                    'List': List,
-                                    'Any': Any,
-                                    'Optional': Optional,
-                                    'Union': Union,
-                                    'sys': sys,
-                                    'traceback': traceback,
-                                    'io': io
-                                }
-                                try:
-                                    return eval(expr, {'__builtins__': {}}, {**allowed_globals, **local_vars})
-                                except Exception as e:
-                                    return f"Error evaluating expression: {str(e)}"
+        # Create a basic environment setup script with proper indentation
+        setup_script = """
+                    # Import required libraries
+                    import pandas as pd
+                    import numpy as np
+                    from typing import Dict, List, Any, Optional, Union
+                    import json
+                    import io
+                    import sys
+                    import traceback
 
-                        # Make helper available
-                        helper = DataAnalysisHelper()"""
-            # Dedent the setup script to avoid indentation errors
-            dedented_script = textwrap.dedent(setup_script)
-            # Execute the setup script in the sandbox
-            result = self.executor.execute_code(
-                code=dedented_script,
-                source_dir="."
-            )
-            if result["errors"]:
-                self.logger.error(f"Failed to initialize sandbox environment: {result['errors']}")
-        except Exception as e:
-            self.logger.error(f"Error initializing sandbox environment: {str(e)}")
+                    # Store any helper functions or variables needed for analysis
+                    class DataAnalysisHelper:
+                        @staticmethod
+                        def safe_eval(expr: str, local_vars: Dict[str, Any]) -> Any:
+                            "Safely evaluate an expression with restricted globals."
+                            allowed_globals = {
+                                'pd': pd,
+                                'np': np,
+                                'json': json,
+                                'Dict': Dict,
+                                'List': List,
+                                'Any': Any,
+                                'Optional': Optional,
+                                'Union': Union,
+                                'sys': sys,
+                                'traceback': traceback,
+                                'io': io
+                            }
+                            try:
+                                return eval(expr, {'__builtins__': {}}, {**allowed_globals, **local_vars})
+                            except Exception as e:
+                                return f"Error evaluating expression: {str(e)}"
 
-        
+                    # Make helper available
+                    helper = DataAnalysisHelper()"""
+        # Dedent the setup script to avoid indentation errors
+        dedented_script = textwrap.dedent(setup_script)
+        # Execute the setup script in the sandbox
+        result = self.executor.execute_code(
+            code=dedented_script,
+            source_dir="."
+        )
+        if result["errors"]:
+            self.logger.error(f"Failed to initialize sandbox environment: {result['errors']}")
+
     async def execute(
         self,
         task: str,
@@ -288,91 +654,31 @@ class DataAnalysisAgent(BaseAgent):
     ) -> AgentResponse:
         """
         Execute a data analysis task.
-    if query and not task:
-        task = "custom analysis"
-    elif not task and not query:
-        return AgentResponse(
-            success=False,
-            output=None,
-            error="Either 'query' or 'task' parameter is required"
-        )
-    
-    self.logger.info(f"Executing data analysis task: {task}")
-    
-    try:
-        # Make sure the sandbox environment is initialized
-        if not self.initialized:
-            await self._initialize_sandbox_environment()
-            self.initialized = True
-        
-        # Route to the appropriate handler based on the task
-        task = task.lower().strip()
-        
-        if task == "profile data":
-            return await self.profile_data(**kwargs)
-        elif task == "clean data":
-            return await self._clean_data(**kwargs)
-        elif task == "analyze data":
-            return await self._analyze_data(**kwargs)
-        elif task == "transform data":
-            return await self._transform_data(**kwargs)
-        elif task == "custom analysis":
-            query = kwargs.get("query")
-            if not query:
-                return AgentResponse(
-                    success=False,
-                    output=None,
-                    error="Custom analysis requires a 'query' parameter"
-                )
-            return await self._custom_analysis(query, **kwargs)
-        else:
-            return AgentResponse(
-                success=False,
-                output=None,
-                error=f"Unknown task: {task}"
-            )
-    
-    except Exception as e:
-        self.logger.exception(f"Error executing task: {task}")
-        return AgentResponse(
-            success=False,
-            output=None,
-            error=f"Error executing task: {str(e)}",
-            metadata={"traceback": self._get_traceback()}
-        )
             
         Returns:
             AgentResponse with the cleaned data
         """
         # Implementation for data cleaning
-        try:
-            data_path = kwargs.get("data_path")
-            if not data_path:
-                return AgentResponse(
-                    success=False,
-                    output=None,
-                    error="'data_path' parameter is required for data cleaning"
-                )
-            df = await self._load_data(data_path)
-            # Basic cleaning: drop rows with any missing values and remove duplicates
-            cleaned_df = df.dropna().drop_duplicates()
-            # Return a preview of cleaned data and its shape
-            preview = cleaned_df.head(10).to_dict(orient="records")
-            return AgentResponse(
-                success=True,
-                output={
-                    "preview": preview,
-                    "shape": cleaned_df.shape
-                },
-                error=None
-            )
-        except Exception as e:
-            self.logger.exception("Error during data cleaning")
+        data_path = kwargs.get("data_path")
+        if not data_path:
             return AgentResponse(
                 success=False,
                 output=None,
-                error=f"Data cleaning failed: {str(e)}"
+                error="'data_path' parameter is required for data cleaning"
             )
+        df = await self._load_data(data_path)
+        # Basic cleaning: drop rows with any missing values and remove duplicates
+        cleaned_df = df.dropna().drop_duplicates()
+        # Return a preview of cleaned data and its shape
+        preview = cleaned_df.head(10).to_dict(orient="records")
+        return AgentResponse(
+            success=True,
+            output={
+                "preview": preview,
+                "shape": cleaned_df.shape
+            },
+            error=None
+        )
     
     async def _analyze_data(self, **kwargs) -> AgentResponse:
         """
@@ -427,33 +733,4 @@ class DataAnalysisAgent(BaseAgent):
             error="Custom analysis not yet implemented"
         )
     
-    async def _generate_analysis_code(self, query: str, **kwargs) -> str:
-        """
-        Generate Python code to perform the requested analysis.
-        
-        Args:
-            query: Natural language query
-            **kwargs: Additional parameters
-            
-        Returns:
-            Generated Python code as a string
-        """
-        # In a real implementation, this would use an LLM to generate the code
-        # For now, we'll return a simple template
-        return """
-        # This is a placeholder for generated analysis code
-        # In a real implementation, this would be generated based on the query
-        
-        import pandas as pd
-        import numpy as np
-        
-        # Load data
-        # data = pd.read_csv('data.csv')
-        
-        # Perform analysis
-        # result = data.describe()
-        
-        # Save results
-        # result.to_csv('analysis_result.csv')
-        print("Analysis completed successfully")
-        """
+
