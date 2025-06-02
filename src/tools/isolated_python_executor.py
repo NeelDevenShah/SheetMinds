@@ -49,22 +49,8 @@ class IsolatedPythonExecutor:
             "errors": ""
         }
         
-        try:
-            self._setup_isolated_environment(source_dir, files_to_copy)
-            result = self._run_code(code, input_data)
-        except Exception as e:
-            result["status"] = "setup_error"
-            result["errors"] = f"Error setting up isolated directory: {str(e)}\n{traceback.format_exc()}"
-        finally:
-            # Always attempt to restore the original directory
-            try:
-                os.chdir(self.original_dir)
-            except Exception as e:
-                if result["errors"]:
-                    result["errors"] += f"\nError returning to original directory: {str(e)}"
-                else:
-                    result["errors"] = f"Error returning to original directory: {str(e)}"
-        
+        self._setup_isolated_environment(source_dir, files_to_copy)
+        result = self._run_code(code, input_data)
         return result
     
     def _setup_isolated_environment(self, source_dir: str, files_to_copy: Optional[List[str]]) -> None:
@@ -79,20 +65,37 @@ class IsolatedPythonExecutor:
         if not os.path.exists(self.isolated_dir):
             os.makedirs(self.isolated_dir)
         
+        # Get absolute paths for source and destination directories
+        source_dir = os.path.abspath(source_dir)
+        isolated_dir = os.path.abspath(self.isolated_dir)
+        
+        # If source and destination are the same, no need to copy
+        if source_dir == isolated_dir:
+            print("Source and destination directories are the same. No files to copy.")
+            return
+        
         # Copy specified files from source directory
         copied_files = []
         if files_to_copy:
             for file_name in files_to_copy:
                 source_file = os.path.join(source_dir, file_name)
+                dest_file = os.path.join(isolated_dir, file_name)
+                
+                # Skip if source and destination are the same file
+                if os.path.abspath(source_file) == os.path.abspath(dest_file):
+                    print(f"Skipping {file_name}: source and destination are the same")
+                    continue
+                    
                 if os.path.isfile(source_file):
-                    dest_file = os.path.join(self.isolated_dir, file_name)
+                    # Create parent directories if they don't exist
+                    os.makedirs(os.path.dirname(dest_file), exist_ok=True)
                     shutil.copy2(source_file, dest_file)
                     copied_files.append(file_name)
                 else:
                     print(f"Warning: File not found or not a file: {file_name}")
         
         if copied_files:
-            print(f"Copied files to isolated directory: {', '.join(copied_files)}")
+            print(f"Copied {len(copied_files)} files to isolated directory: {', '.join(copied_files)}")
         else:
             print("No files were copied to the isolated directory.")
     
@@ -126,38 +129,33 @@ class IsolatedPythonExecutor:
         output_buffer = io.StringIO()
         error_buffer = io.StringIO()
         
-        try:
-            # Handle input data if provided
-            original_stdin = sys.stdin
-            if input_data:
-                sys.stdin = io.StringIO(input_data)
-            
-            # Execute the code in the isolated environment
-            with redirect_stdout(output_buffer), redirect_stderr(error_buffer):
-                # Create a restricted globals dictionary
-                restricted_globals = {
-                    "__builtins__": __builtins__,
-                    "__name__": "__main__",
-                    "__file__": code_file,
-                }
-                
-                with open("execute_me.py", "r") as f:
-                    code_to_execute = f.read()
-                
-                exec(code_to_execute, restricted_globals)
-            
-            # Restore stdin if needed
-            if input_data:
-                sys.stdin = original_stdin
-            
-            # Collect output
-            result["output"] = output_buffer.getvalue()
-            result["errors"] = error_buffer.getvalue()
-            
-        except Exception as e:
-            result["status"] = "error"
-            result["errors"] = f"{str(e)}\n{traceback.format_exc()}"
+        # Handle input data if provided
+        original_stdin = sys.stdin
+        if input_data:
+            sys.stdin = io.StringIO(input_data)
         
+        # Execute the code in the isolated environment
+        with redirect_stdout(output_buffer), redirect_stderr(error_buffer):
+            # Create a restricted globals dictionary
+            restricted_globals = {
+                "__builtins__": __builtins__,
+                "__name__": "__main__",
+                "__file__": code_file,
+            }
+            
+            with open("execute_me.py", "r") as f:
+                code_to_execute = f.read()
+            
+            exec(code_to_execute, restricted_globals)
+        
+        # Restore stdin if needed
+        if input_data:
+            sys.stdin = original_stdin
+        
+        # Collect output
+        result["output"] = output_buffer.getvalue()
+        result["errors"] = error_buffer.getvalue()  
+
         return result
     
     def cleanup(self) -> bool:
@@ -167,15 +165,11 @@ class IsolatedPythonExecutor:
         Returns:
             True if cleanup was successful, False otherwise
         """
-        try:
-            if os.path.exists(self.isolated_dir):
-                shutil.rmtree(self.isolated_dir)
-                print(f"Cleaned up isolated directory: {self.isolated_dir}")
-                return True
-            return False
-        except Exception as e:
-            print(f"Error during cleanup: {str(e)}")
-            return False
+        if os.path.exists(self.isolated_dir):
+            shutil.rmtree(self.isolated_dir)
+            print(f"Cleaned up isolated directory: {self.isolated_dir}")
+            return True
+        return False
     
     @staticmethod
     def read_code_file(filename: str) -> str:
@@ -188,11 +182,8 @@ class IsolatedPythonExecutor:
         Returns:
             The content of the file as a string
         """
-        try:
-            with open(filename, "r") as file:
-                return file.read()
-        except Exception as e:
-            return f"Error reading file: {str(e)}"
+        with open(filename, "r") as file:
+            return file.read()
 
 
 # Example usage

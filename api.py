@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """
-SheetMind API - Simplified REST API for CSV data analysis
+SheetMind API - AI-Powered Data Analysis API
+
+This API provides endpoints for analyzing CSV data using AI-generated code.
+It uses Google's Gemini for code generation and executes the code in an isolated environment.
 """
 import os
 import logging
 import asyncio
+import json
+import uuid
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from functools import wraps
+from datetime import datetime
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
 # Add the src directory to the Python path
@@ -17,151 +23,233 @@ import sys
 sys.path.append(str(Path(__file__).parent.absolute()))
 
 from src.agents.controller_agent import ControllerAgent
-from src.agents.data_analysis_agent import DataAnalysisAgent
+from src.agents.data_analysis_agent import DataAnalysisError, CodeExecutionError
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('api.log')
+    ]
+)
 logger = logging.getLogger(__name__)
 
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)  # Enable Cross-Origin Resource Sharing
 
-# Global variable to store the CSV file path
-csv_file_path = None
-# Global controller agent
-controller = None
-# Global event loop
-loop = None
+# Configuration
+CONFIG = {
+    "UPLOAD_FOLDER": "uploads",
+    "ALLOWED_EXTENSIONS": {"csv", "xlsx", "xls", "parquet"},
+    "MAX_CONTENT_LENGTH": 50 * 1024 * 1024,  # 50MB max file size
+    "DEFAULT_PORT": 5000,
+    "HOST": "0.0.0.0",
+    "DEBUG": False # True
+}
+
+# Global variables
+global_controller = None
+app.config['UPLOAD_FOLDER'] = CONFIG["UPLOAD_FOLDER"]
+app.config['MAX_CONTENT_LENGTH'] = CONFIG["MAX_CONTENT_LENGTH"]
+
+# Ensure upload folder exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 
 def async_to_sync(async_func):
     """Helper to run async functions in Flask synchronous context."""
-    global loop
-    if loop is None:
-        # Create a new event loop if none exists
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    
     @wraps(async_func)
     def wrapped(*args, **kwargs):
-        return loop.run_until_complete(async_func(*args, **kwargs))
+        try:
+            # Create a new event loop for this thread if it doesn't exist
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            # Run the coroutine and return its result
+            return loop.run_until_complete(async_func(*args, **kwargs))
+        except Exception as e:
+            logger.exception("Error in async_to_sync")
+            raise
     
     return wrapped
 
 
-def init_controller():
-    """Initialize the controller if not already initialized."""
-    global controller
-    if controller is None:
-        controller = ControllerAgent(
+def get_controller() -> ControllerAgent:
+    """Get or create the global controller instance."""
+    global global_controller
+    if global_controller is None:
+        logger.info("Initializing ControllerAgent")
+        global_controller = ControllerAgent(
             agent_id="controller_001",
             name="SheetMind Controller",
-            description="Simple controller for CSV analysis"
+            description="Manages data analysis workflows"
         )
-    return controller
+    return global_controller
 
 
-@app.route("/api/set_csv_path", methods=["POST"])
-def set_csv_path():
-    """Set the path to the CSV file."""
-    data = request.json
-    if "path" not in data:
-        return jsonify({"success": False, "error": "No path provided"}), 400
+def allowed_file(filename: str) -> bool:
+    """Check if the file has an allowed extension."""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in CONFIG["ALLOWED_EXTENSIONS"]
 
-    global csv_file_path
-    csv_file_path = data["path"]
 
-    if not os.path.exists(csv_file_path):
-        return jsonify({"success": False, "error": f"File not found: {csv_file_path}"}), 404
+def create_error_response(message: str, status_code: int = 400, **kwargs) -> Response:
+    """Create a standardized error response."""
+    response = {
+        "success": False,
+        "error": message,
+        "timestamp": datetime.utcnow().isoformat(),
+        **kwargs
+    }
+    return jsonify(response), status_code
 
-    return jsonify({
+
+def create_success_response(data: Any, status_code: int = 200, **kwargs) -> Response:
+    """Create a standardized success response."""
+    response = {
         "success": True,
-        "message": f"CSV file path set to: {csv_file_path}"
-    })
+        "data": data,
+        "timestamp": datetime.utcnow().isoformat(),
+        **kwargs
+    }
+    return jsonify(response), status_code
 
-
-@app.route("/api/ask", methods=["POST"])
-def ask_question():
-    """Ask a question about the CSV data."""
-    data = request.json
-    if "question" not in data:
-        return jsonify({"success": False, "error": "No question provided"}), 400
-
-    question = data["question"]
-    
-    # Check if CSV path is set
-    if not csv_file_path:
-        return jsonify({"success": False, "error": "CSV file path not set. Please set a path first."}), 400
-
-    if not os.path.exists(csv_file_path):
-        return jsonify({"success": False, "error": f"File not found: {csv_file_path}"}), 404
-
-    try:
-        # Initialize the controller
-        agent = init_controller()
-        
-        # Call the async function to execute the query
-        result = execute_query(question, csv_file_path)
-        
-        # Return the results
-        if result.success:
-            return jsonify({"success": True, "result": result.output})
-        else:
-            return jsonify({"success": False, "error": result.error}), 500
-            
-    except Exception as e:
-        logger.exception("Error processing question")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
+@app.route('/api/upload', methods=['POST'])
 @async_to_sync
-async def execute_query(question, file_path):
-    """Execute a query using the controller agent."""
-    # Get the controller
-    agent = init_controller()
+async def upload_file():
+    """
+    Upload a file to the server.
     
-    # Execute the query and return the result
-    return await agent.execute(
-        task="custom analysis",
-        query=question,
+    Returns:
+        JSON response with the file path and metadata
+    """
+    # Check if the post request has the file part
+    if 'file' not in request.files:
+        return create_error_response("No file part in the request")
+    
+    file = request.files['file']
+    
+    # If user does not select file, browser might
+    # submit an empty part without filename
+    if file.filename == '':
+        return create_error_response("No selected file")
+    
+    if file and allowed_file(file.filename):
+        # Ensure upload directory exists
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        
+        # Create a unique filename to prevent overwriting
+        file_ext = file.filename.rsplit('.', 1)[1].lower()
+        filename = f"{uuid.uuid4()}.{file_ext}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # Get file info
+        file_size = os.path.getsize(filepath)
+        
+        return create_success_response({
+            "filename": filename,
+            "filepath": filepath,
+            "size": file_size,
+            "content_type": file.content_type
+        })
+    
+    return create_error_response("File type not allowed")
+
+@app.route("/api/analyze", methods=["POST"])
+@async_to_sync
+async def analyze_data():
+    """
+    Analyze data based on the provided query.
+    
+    Request JSON format:
+    {
+        "query": "Your analysis question",
+        "file_path": "/path/to/your/file.csv"
+    }
+    
+    Returns:
+        JSON response with analysis results
+    """
+    # Get and validate request data
+    data = request.get_json()
+    
+    if not data:
+        return create_error_response("No JSON data provided")
+    
+    query = data.get("query")
+    file_path = data.get("file_path")
+    
+    if not query or not isinstance(query, str):
+        return create_error_response("Query is required and must be a string")
+    
+    if not file_path or not isinstance(file_path, str):
+        return create_error_response("file_path is required and must be a string")
+    
+    # Check if file exists
+    if not os.path.exists(file_path):
+        return create_error_response(f"File not found: {file_path}", status_code=404)
+    
+    # Get the controller
+    controller = get_controller()
+    
+    # Execute the analysis
+    result = await controller.execute(
+        task="analyze",
+        query=query,
         data_path=file_path
     )
+    
+    # Return the result
+    if result.success:
+        return create_success_response({
+            "result": result.output.get("result"),
+            "explanation": result.output.get("explanation"),
+            "code": result.output.get("code"),
+            "data_preview": result.output.get("data_preview")
+        })
+    else:
+        return create_error_response(
+            result.error or "Analysis failed",
+            status_code=500
+        )
+
+@app.errorhandler(404)
+def not_found_error(error):
+    """Handle 404 errors."""
+    return create_error_response("The requested resource was not found", status_code=404)
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors."""
+    return create_error_response("An internal server error occurred", status_code=500)
 
 
 if __name__ == "__main__":
-    # Apply a custom analysis patch if needed for data analysis agent
-    async def custom_analysis_patch(self, query: str, **kwargs):
-        """Custom analysis implementation for DataAnalysisAgent."""
-        data_path = kwargs.get("data_path")
-        if not data_path:
-            return self._create_error_response("No data path provided for custom analysis")
-        
-        try:
-            data = await self._load_data(data_path)
-            
-            # Generate a response to the query
-            response = {
-                "query": query,
-                "answer": f"Analysis of {data_path} based on query: {query}",
-                "data_summary": {
-                    "rows": len(data),
-                    "columns": len(data.columns),
-                    "column_names": list(data.columns),
-                    "sample_data": data.head(5).to_dict(orient="records")
-                }
-            }
-            
-            return self._create_success_response(response)
-        except Exception as e:
-            return self._create_error_response(f"Error in custom analysis: {str(e)}")
-    
-    # Apply the patch
-    DataAnalysisAgent._custom_analysis = custom_analysis_patch
+    # Print API documentation
+    print("\n" + "="*50)
+    print("SheetMind API Server")
+    print("="*50)
+    print("\nAvailable endpoints:")
+    print("  POST /api/upload          - Upload a file")
+    print("  POST /api/analyze         - Analyze data with a query")
+    print("\nConfiguration:")
+    print(f"  Host: {CONFIG['HOST']}")
+    print(f"  Port: {CONFIG['DEFAULT_PORT']}")
+    print(f"  Debug: {CONFIG['DEBUG']}")
+    print("\nStarting server...\n")
     
     # Run the Flask app
-    print("Starting SheetMind API server...")
-    print("Use the following endpoints:")
-    print("  POST /api/set_csv_path - Set the CSV file path")
-    print("  POST /api/ask - Ask a question about the CSV data")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(
+        host=CONFIG["HOST"],
+        port=CONFIG["DEFAULT_PORT"],
+        debug=CONFIG["DEBUG"]
+    )
 
