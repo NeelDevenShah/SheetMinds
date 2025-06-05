@@ -4,7 +4,9 @@ import asyncio
 from typing import Dict, Any, Optional, Union
 import traceback
 from dataclasses import dataclass, asdict
+from dotenv import load_dotenv
 
+load_dotenv()
 
 @dataclass
 class CodeGenerationResult:
