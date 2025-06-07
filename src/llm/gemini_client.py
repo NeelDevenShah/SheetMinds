@@ -3,10 +3,16 @@ import json
 import asyncio
 from typing import Dict, Any, Optional, Union
 import traceback
+import logging # Added
+import time # Added
 from dataclasses import dataclass, asdict
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Basic logging configuration
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__) # Added
 
 @dataclass
 class CodeGenerationResult:
@@ -26,18 +32,33 @@ class GeminiClient:
         Args:
             api_key: Optional API key. If not provided, will look for GEMINI_API_KEY env var.
         """
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        _env_api_key = os.getenv("GEMINI_API_KEY")
+        logger.info(f"GeminiClient __init__: GEMINI_API_KEY from env: {'******' if _env_api_key else 'Not found'}")
+        self.api_key = api_key or _env_api_key
         if not self.api_key:
-            raise ValueError("Gemini API key not set. Please set GEMINI_API_KEY environment variable.")
+            logger.error("GeminiClient __init__: Gemini API key is missing. Ensure GEMINI_API_KEY is in .env or passed directly.")
+            raise ValueError("Gemini API key not set. Please set GEMINI_API_KEY environment variable or pass it to the client.")
+        else:
+            logger.info("GeminiClient __init__: API key loaded successfully.")
 
     async def _get_llm(self):
         """Get an instance of the LLM client."""
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            api_key=self.api_key,
-            temperature=0.2  # Lower temperature for more deterministic code generation
-        )
+        logger.info("GeminiClient _get_llm: Attempting to import and instantiate ChatGoogleGenerativeAI.")
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            llm_instance = ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash", 
+                api_key=self.api_key,
+                temperature=0.2  # Lower temperature for more deterministic code generation
+            )
+            logger.info("GeminiClient _get_llm: ChatGoogleGenerativeAI instantiated successfully.")
+            return llm_instance
+        except ImportError as e:
+            logger.error(f"GeminiClient _get_llm: Failed to import langchain_google_genai. Ensure it's installed. Error: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"GeminiClient _get_llm: Failed to instantiate ChatGoogleGenerativeAI. Error: {e}", exc_info=True)
+            raise
 
     async def generate_content(
         self, 
@@ -76,10 +97,19 @@ Please provide a clear and concise response."""
         if system_instruction:
             full_prompt = f"{system_instruction}\n\n{full_prompt}"
             
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: llm.invoke(full_prompt)
-        )
+        logger.info(f"GeminiClient: Sending prompt to LLM (first 100 chars): {full_prompt[:100]}...")
+        start_time = time.time()
+        try:
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: llm.invoke(full_prompt)
+            )
+            end_time = time.time()
+            logger.info(f"GeminiClient: LLM call completed in {end_time - start_time:.2f} seconds.")
+        except Exception as e:
+            end_time = time.time()
+            logger.error(f"GeminiClient: LLM call failed after {end_time - start_time:.2f} seconds: {e}", exc_info=True)
+            raise # Re-raise the exception to be handled by the caller
         return response.content.strip()
 
     async def generate_analysis_code(

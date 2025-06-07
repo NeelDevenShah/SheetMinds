@@ -13,7 +13,7 @@ streamlit>=1.30.0
 # Assuming GeminiClient uses google-generativeai directly.
 # If it uses langchain-google-genai, keep that instead or in addition.
 google-generativeai>=0.3.0 # Check for the version your GeminiClient needs
-# langchain-google-genai>=0.0.5 # Keep if explicitly used by GeminiClient
+langchain-google-genai>=0.0.5 # Keep if explicitly used by GeminiClient
 
 # Data Processing
 openpyxl>=3.0.9  # For Excel support

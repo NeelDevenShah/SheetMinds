@@ -1,204 +1,79 @@
-# **SheetMind: Agentic AI System for CSV/Excel Data Analysis**
+# SheetMind Streamlit Application
 
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+This application provides a web interface for analyzing structured data files (CSV, Excel, Parquet) using AI.
 
-## 🧠 Overview
+## Setup and Running
 
-**SheetMind** is a cutting-edge agentic AI framework designed specifically for autonomous and intelligent analysis of structured tabular data such as CSV or Excel files. Inspired by GenSpark-like systems, it orchestrates a multi-agent ecosystem capable of dynamic code generation, self-correction, safe execution, and deep analytical reasoning.
+1.  **Prerequisites**:
+    *   Python 3.8+
+    *   Pip (Python package installer)
 
-Built with modularity, safety, and continual learning in mind, the architecture powers intelligent agents that can:
+2.  **Create a Virtual Environment (Recommended)**:
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
 
-- Interpret user queries in natural language
-- Dynamically create new agents for tasks like data cleaning, analysis, transformation, and visualization
-- Execute generated code safely in sandboxed environments
-- Reflect, improve, and learn from errors and feedback
+3.  **Install Dependencies**:
+    Navigate to the `SheetMinds` directory (where `requirements.txt` and `streamlit_app.py` are located) and run:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
----
+4.  **Set up Google API Key**:
+    *   Create a file named `.env` in the `SheetMinds` directory (the same directory as `streamlit_app.py`).
+    *   Add your Google API key to this file:
+        ```
+        GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY_HERE"
+        ```
+    *   Replace `"YOUR_GOOGLE_API_KEY_HERE"` with your actual Gemini API key.
 
-## 🚀 Features
+5.  **Run the Streamlit Application**:
+    In your terminal, from the `SheetMinds` directory, run:
+    ```bash
+    streamlit run streamlit_app.py
+    ```
+    This will start the Streamlit server, and the application should open in your web browser.
 
-- **Agent-Based Architecture**: Modular design with specialized agents for different tasks
-- **Safe Execution**: Sandboxed environment for secure code execution
-- **Automated Data Profiling**: Comprehensive analysis of data structure and statistics
-- **Natural Language Interface**: Interact with your data using natural language queries
-- **Extensible**: Easily add new agents and capabilities
-- **Asynchronous Processing**: Efficient handling of multiple tasks concurrently
+## How to Use
 
-## 🧩 Core Components
+1.  **Upload Data**: Click on "Choose a data file" to upload your CSV, Excel, or Parquet file.
+2.  **Enter Query**: Type your data analysis question in the text area (e.g., "What are the average sales per product category?").
+3.  **Analyze**: Click the "Analyze Data" button.
+4.  **View Results**: The application will display:
+    *   A textual answer to your query.
+    *   An explanation of how the answer was derived.
+    *   The Python code generated and executed for the analysis.
+    *   A preview of the resulting data (if applicable).
 
-### 1. **Executive Layer – Controller Agent**
+## Project Structure (Simplified)
 
-- Orchestrates tasks across all agents.
-- Implements ReAct (Reason + Act) pattern.
-- Maintains session and memory state.
-- Decomposes user intent into executable sub-tasks.
-
-### 2. **Agent Factory Layer**
-
-- Dynamically generates new agents based on task needs.
-- Uses Groq/Gemini for safe code generation.
-- Verifies agents in a sandbox before deployment.
-- Learns from past successes and failures.
-
-### 3. **Specialized Agent Layer**
-
-Includes:
-
-- `DataAnalysisAgent`: Insight extraction and profiling
-- `FormulaAgent`: Spreadsheet formula evaluation
-- `VisualizationAgent`: Chart and graph generation
-- `TransformationAgent`: Format conversions and cleaning
-- `CodeExecutionAgent`: Executes validated Python/R scripts
-- `NaturalLanguageAgent`: Converts NL queries into executable logic
-
-### 4. **Secure Execution Sandbox**
-
-- Containerized runtime (Docker or VM-based)
-- Enforces CPU/memory/time limits
-- Validates all inputs and outputs
-- Monitors logs, metrics, and exceptions
-
-### 5. **Feedback and Self-Reflection System**
-
-- Detects logical/syntactic/runtime errors
-- Classifies issues and formulates improvement prompts
-- Maintains learning history of successful/failed attempts
-
----
-
-## 🧪 Advanced AI Capabilities
-
-- **Chain-of-Thought Reasoning**: Transparent intermediate steps.
-- **Tree-of-Thought Planning**: Exploratory strategy optimization.
-- **ReAct Pattern**: Think → Act → Observe → Improve loop.
-- **Retrieval-Augmented Generation**: Fetch past examples to guide agents.
-- **Meta-Cognitive Reflection**: Test generation, performance evaluation, and self-correction.
-
----
-
-## 📦 Project Structure
-
-```bash
-SheetMind/
-│
-├── src/
-│   ├── agents/           # Specialized agents (data, formula, viz, etc.)
-│   ├── chains/           # Agent orchestration flows
-│   ├── tools/            # Utilities and helper tool interfaces
-│   ├── prompts/          # Prompt templates for LLMs
-│   ├── retrievers/       # Retrieval logic for context and RAG
-│   ├── embeddings/       # Embedding generators for data/metadata
-│   ├── utils/            # Common helper functions
-│   └── main.py           # Entry point for orchestrator
-│
-├── config/
-│   └── config.yaml       # Model configs, thresholds, env settings
-│
-├── .env                  # Environment variables
-├── .env.example          # Template env
+```
+SheetMinds/
+├── streamlit_app.py      # The main Streamlit application file
 ├── requirements.txt      # Python dependencies
-├── pyproject.toml        # Project and dependency metadata
-├── uv.lock               # Locked deps for reproducibility
-├── README.md             # This file
-└── .gitignore            # Ignore rules
+├── .env                  # For API keys (you need to create this)
+├── src/
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   ├── base_agent.py
+│   │   ├── controller_agent.py
+│   │   └── data_analysis_agent.py
+│   ├── llm/
+│   │   ├── __init__.py
+│   │   └── gemini_client.py
+│   └── tools/
+│       ├── __init__.py
+│       └── isolated_python_executor.py
+└── uploads/              # Default folder for uploads (created by Flask app, not directly used by Streamlit temp files)
 ```
 
----
+## Notes
 
-## 📎 Dependency Management
+*   The Streamlit app uses a temporary file for uploads, which is deleted after processing.
+*   Ensure your `GOOGLE_API_KEY` is correctly set in the `.env` file for the AI analysis to work.
+*   The `src` directory containing the agent logic must be in the same directory as `streamlit_app.py` or accessible via `PYTHONPATH`.
 
-This project uses **[uv](https://github.com/uv-py/uv)** for fast and modern dependency handling.
-
-### ⚙️ Setup
-
-```bash
-# Install uv
-pip install uv
-
-# Sync dependencies
-uv sync
-
-# Add a new dependency
-uv add <package-name>
-
-# Remove a dependency
-uv remove <package-name>
-```
-
-- `pyproject.toml`: Dependency definitions
-- `uv.lock`: Lock file for reproducibility
-
----
-
-## 🚧 Roadmap
-
-| Phase | Goal                                                  |
-| ----- | ----------------------------------------------------- |
-| 1     | Build controller agent + sandbox + core agents        |
-| 2     | Develop agent factory + verification system           |
-| 3     | Implement feedback loop, reflection, Tree of Thoughts |
-| 4     | Optimize, expand agent skills, UX refinement          |
-
----
-
-## 🔐 Security Design
-
-- **Sandboxed Code Execution** (Docker/RestrictedPython)
-- **Input & Output Sanitization**
-- **Resource Isolation**
-- **Permission Layers**
-- **Rollback & Error Recovery**
-
----
-
-## 🌟 Key Features
-
-- Built for tabular data (CSV/Excel)
-- Auto-generates specialized code agents on-the-fly
-- Safe execution with detailed monitoring
-- Feedback-driven self-improvement
-- Modular, scalable, and domain-adaptive
-
----
-
-## 🚀 Use Cases
-
-- Business data analytics
-- Automated spreadsheet reporting
-- Visual dashboard generation
-- Data cleaning pipelines
-- Natural language to analysis conversion
-
----
-
-## 🛠 Installation
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/yourusername/sheetmind.git
-   cd sheetmind
-   ```
-
-2. Create and activate a virtual environment (recommended):
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   ```
-
-3. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Set up your environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-   Then edit the `.env` file to add your Gemini API key.
 
 ## 🚀 Quick Start
 
