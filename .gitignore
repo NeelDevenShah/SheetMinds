@@ -30,6 +30,7 @@ env/
 
 # Data files
 *.csv
+!test_data/*.csv
 *.tsv
 *.json
 *.db
@@ -63,3 +64,6 @@ yarn.lock
 *.bak
 *.tmp
 *.old
+
+# As this is the file where the code given by LLM is writen and executed
+data_analysis_sandbox/
