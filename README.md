@@ -1,328 +1,184 @@
-# **SheetMind: Agentic AI System for CSV/Excel Data Analysis**
+# SheetMind: AI-Powered Conversational Data Analysis
 
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+SheetMind transforms the way you interact with structured data. Instead of wrestling with complex formulas or code, simply ask questions in natural language and get instant insights, explanations, and the underlying analysis code.
 
-## 🧠 Overview
+## The Problem We Solve
 
-**SheetMind** is a cutting-edge agentic AI framework designed specifically for autonomous and intelligent analysis of structured tabular data such as CSV or Excel files. Inspired by GenSpark-like systems, it orchestrates a multi-agent ecosystem capable of dynamic code generation, self-correction, safe execution, and deep analytical reasoning.
+Analyzing data locked in spreadsheets (CSVs, Excel files) or other structured formats can be a significant hurdle. Many individuals and teams lack the specialized skills (like advanced Excel, SQL, or Python programming) or the time to perform in-depth data exploration. This often leads to:
+-   Underutilized data and missed opportunities.
+-   Time-consuming manual analysis prone to errors.
+-   Reliance on data specialists, creating bottlenecks.
+-   A desire for quick answers without a steep learning curve.
 
-Built with modularity, safety, and continual learning in mind, the architecture powers intelligent agents that can:
+SheetMind aims to break down these barriers, making data analysis accessible, intuitive, and efficient for everyone.
 
-- Interpret user queries in natural language
-- Dynamically create new agents for tasks like data cleaning, analysis, transformation, and visualization
-- Execute generated code safely in sandboxed environments
-- Reflect, improve, and learn from errors and feedback
+## Our Solution: SheetMind
 
----
+SheetMind is an intelligent application that allows you to:
+-   **Upload your data files** (CSV, Excel, Parquet).
+-   **Ask questions in plain English** (e.g., "What are the average sales per product category?", "Show me customer growth trends.").
+-   **Receive comprehensive results**:
+    -   A direct textual answer.
+    -   A clear explanation of how the answer was derived.
+    -   The Python code generated and executed for the analysis.
+    -   A preview of the resulting data (if applicable).
 
-## 🚀 Features
+It's designed to feel like you're conversing with a data analyst who not only gives you answers but also shows you their work.
 
-- **Agent-Based Architecture**: Modular design with specialized agents for different tasks
-- **Safe Execution**: Sandboxed environment for secure code execution
-- **Automated Data Profiling**: Comprehensive analysis of data structure and statistics
-- **Natural Language Interface**: Interact with your data using natural language queries
-- **Extensible**: Easily add new agents and capabilities
-- **Asynchronous Processing**: Efficient handling of multiple tasks concurrently
+## Key Features
 
-## 🧩 Core Components
+-   **Natural Language Queries:** No need to learn complex query languages.
+-   **Multi-Format Support:** Handles CSV, Excel (.xlsx, .xls), and Parquet files.
+-   **AI-Powered Code Generation:** Leverages Google's Gemini LLM to generate Python (pandas) code dynamically.
+-   **Transparent Analysis:** See the exact code used, promoting trust and learning.
+-   **Step-by-Step Explanations:** Understand the "how" behind the "what."
+-   **Safe Code Execution:** AI-generated code runs in an isolated sandbox environment.
+-   **User-Friendly Interface:** Built with Streamlit for an intuitive web experience.
+-   **Extensible Agentic Architecture:** Built with a modular system of AI agents.
 
-### 1. **Executive Layer – Controller Agent**
+## How it Works (High-Level Architecture)
 
-- Orchestrates tasks across all agents.
-- Implements ReAct (Reason + Act) pattern.
-- Maintains session and memory state.
-- Decomposes user intent into executable sub-tasks.
+SheetMind employs an agent-based system:
+1.  **Streamlit UI:** Provides the interface for file upload and query input.
+2.  **ControllerAgent:** Orchestrates the workflow, manages requests, and interacts with other agents.
+3.  **DataAnalysisAgent:**
+    -   Loads the data.
+    -   Communicates with the Gemini LLM (`GeminiClient`) to understand the query and generate appropriate Python code.
+    -   Executes the generated code safely in an `IsolatedPythonExecutor`.
+    -   Uses the LLM again to generate explanations of the results and code.
+4.  **Results Display:** The UI presents the findings from the agents.
 
-### 2. **Agent Factory Layer**
+## Current Implementation: Streamlit Application
 
-- Dynamically generates new agents based on task needs.
-- Uses Groq/Gemini for safe code generation.
-- Verifies agents in a sandbox before deployment.
-- Learns from past successes and failures.
+The primary way to interact with SheetMind is through its Streamlit web application.
 
-### 3. **Specialized Agent Layer**
+### Setup and Running
 
-Includes:
+1.  **Prerequisites**:
+    *   Python 3.8+
+    *   Pip (Python package installer)
 
-- `DataAnalysisAgent`: Insight extraction and profiling
-- `FormulaAgent`: Spreadsheet formula evaluation
-- `VisualizationAgent`: Chart and graph generation
-- `TransformationAgent`: Format conversions and cleaning
-- `CodeExecutionAgent`: Executes validated Python/R scripts
-- `NaturalLanguageAgent`: Converts NL queries into executable logic
+2.  **Create a Virtual Environment (Recommended)**:
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
 
-### 4. **Secure Execution Sandbox**
+3.  **Install Dependencies**:
+    Navigate to the `SheetMinds` directory (where `requirements.txt` and `streamlit_app.py` are located) and run:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-- Containerized runtime (Docker or VM-based)
-- Enforces CPU/memory/time limits
-- Validates all inputs and outputs
-- Monitors logs, metrics, and exceptions
+4.  **Set up Google API Key**:
+    *   Create a file named `.env` in the `SheetMinds` directory (the same directory as `streamlit_app.py`).
+    *   Add your Google API key to this file:
+        ```
+        GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY_HERE"
+        ```
+    *   Replace `"YOUR_GOOGLE_API_KEY_HERE"` with your actual Gemini API key.
 
-### 5. **Feedback and Self-Reflection System**
+5.  **Run the Streamlit Application**:
+    In your terminal, from the `SheetMinds` directory, run:
+    ```bash
+    streamlit run streamlit_app.py
+    ```
+    This will start the Streamlit server, and the application should open in your web browser.
 
-- Detects logical/syntactic/runtime errors
-- Classifies issues and formulates improvement prompts
-- Maintains learning history of successful/failed attempts
+### How to Use the Streamlit App
 
----
+1.  **Upload Data**: Click on "Choose a data file" to upload your CSV, Excel, or Parquet file.
+2.  **Enter Query**: Type your data analysis question in the text area (e.g., "What are the average sales per product category?").
+3.  **Analyze**: Click the "Analyze Data" button.
+4.  **View Results**: The application will display:
+    *   A textual answer to your query.
+    *   An explanation of how the answer was derived.
+    *   The Python code generated and executed for the analysis.
+    *   A preview of the resulting data (if applicable).
 
-## 🧪 Advanced AI Capabilities
+## Project Structure (Simplified)
 
-- **Chain-of-Thought Reasoning**: Transparent intermediate steps.
-- **Tree-of-Thought Planning**: Exploratory strategy optimization.
-- **ReAct Pattern**: Think → Act → Observe → Improve loop.
-- **Retrieval-Augmented Generation**: Fetch past examples to guide agents.
-- **Meta-Cognitive Reflection**: Test generation, performance evaluation, and self-correction.
-
----
-
-## 📦 Project Structure
-
-```bash
-SheetMind/
-│
-├── src/
-│   ├── agents/           # Specialized agents (data, formula, viz, etc.)
-│   ├── chains/           # Agent orchestration flows
-│   ├── tools/            # Utilities and helper tool interfaces
-│   ├── prompts/          # Prompt templates for LLMs
-│   ├── retrievers/       # Retrieval logic for context and RAG
-│   ├── embeddings/       # Embedding generators for data/metadata
-│   ├── utils/            # Common helper functions
-│   └── main.py           # Entry point for orchestrator
-│
-├── config/
-│   └── config.yaml       # Model configs, thresholds, env settings
-│
-├── .env                  # Environment variables
-├── .env.example          # Template env
+```
+SheetMinds/
+├── streamlit_app.py      # The main Streamlit application file
 ├── requirements.txt      # Python dependencies
-├── pyproject.toml        # Project and dependency metadata
-├── uv.lock               # Locked deps for reproducibility
-├── README.md             # This file
-└── .gitignore            # Ignore rules
+├── .env                  # For API keys (you need to create this)
+├── src/
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   ├── base_agent.py
+│   │   ├── controller_agent.py
+│   │   └── data_analysis_agent.py
+│   ├── llm/
+│   │   ├── __init__.py
+│   │   └── gemini_client.py
+│   └── tools/
+│       ├── __init__.py
+│       └── isolated_python_executor.py
+├── API_DOCS.md           # Detailed documentation for the legacy API
+└── uploads/              # Default folder for uploads (used by legacy Flask app)
 ```
+*(Note: The `uploads/` directory and `API_DOCS.md` primarily relate to a previous Flask-based API version of SheetMind.)*
 
----
+## Future Plans
 
-## 📎 Dependency Management
+SheetMind is an evolving project. Some potential future enhancements include:
+-   **Enhanced Visualization Capabilities:** Integration with more advanced charting libraries for richer data storytelling.
+-   **Support for More Data Sources:** Connections to databases (SQL, NoSQL), cloud storage (S3, GCS), and other data platforms.
+-   **Advanced Data Cleaning & Preparation Tools:** AI-assisted data wrangling features.
+-   **Proactive Insights & Anomaly Detection:** Agents that can automatically identify interesting patterns or outliers.
+-   **Collaboration Features:** Allowing multiple users to work on and discuss analyses.
+-   **Customizable Agent Behaviors:** More fine-grained control over how agents perform tasks.
+-   **Expanded LLM Support:** Option to use other leading Large Language Models.
 
-This project uses **[uv](https://github.com/uv-py/uv)** for fast and modern dependency handling.
+*(Your contributions and ideas for future development are welcome!)*
 
-### ⚙️ Setup
+## Development
 
-```bash
-# Install uv
-pip install uv
+This section is for developers looking to contribute or understand the codebase more deeply.
 
-# Sync dependencies
-uv sync
-
-# Add a new dependency
-uv add <package-name>
-
-# Remove a dependency
-uv remove <package-name>
-```
-
-- `pyproject.toml`: Dependency definitions
-- `uv.lock`: Lock file for reproducibility
-
----
-
-## 🚧 Roadmap
-
-| Phase | Goal                                                  |
-| ----- | ----------------------------------------------------- |
-| 1     | Build controller agent + sandbox + core agents        |
-| 2     | Develop agent factory + verification system           |
-| 3     | Implement feedback loop, reflection, Tree of Thoughts |
-| 4     | Optimize, expand agent skills, UX refinement          |
-
----
-
-## 🔐 Security Design
-
-- **Sandboxed Code Execution** (Docker/RestrictedPython)
-- **Input & Output Sanitization**
-- **Resource Isolation**
-- **Permission Layers**
-- **Rollback & Error Recovery**
-
----
-
-## 🌟 Key Features
-
-- Built for tabular data (CSV/Excel)
-- Auto-generates specialized code agents on-the-fly
-- Safe execution with detailed monitoring
-- Feedback-driven self-improvement
-- Modular, scalable, and domain-adaptive
-
----
-
-## 🚀 Use Cases
-
-- Business data analytics
-- Automated spreadsheet reporting
-- Visual dashboard generation
-- Data cleaning pipelines
-- Natural language to analysis conversion
-
----
-
-## 🛠 Installation
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/yourusername/sheetmind.git
-   cd sheetmind
-   ```
-
-2. Create and activate a virtual environment (recommended):
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   ```
-
-3. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Set up your environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-   Then edit the `.env` file to add your Gemini API key.
-
-## 🚀 Quick Start
-
-### Running the API Server
-
-You can start the API server using the provided control script:
-
-```bash
-# Make the script executable (only needed once)
-chmod +x run.sh
-
-# Start the server
-./run.sh start
-
-# Or use the interactive menu
-./run.sh
-```
-
-This will start the Flask API server on port 5000 by default. If port 5000 is in use, it will automatically find the next available port.
-
-### API Endpoints
-
-The API provides the following endpoints:
-
-- `GET /api/health` - Health check
-- `POST /api/upload` - Upload a file for analysis
-- `POST /api/analyze` - Analyze data with a natural language query
-- `POST /api/profile` - Generate a data profile
-
-For detailed API documentation, see [API_DOCS.md](API_DOCS.md).
-
-### Running Tests
-
-To run the test suite:
-
-```bash
-./run.sh test
-```
-
-This will execute a series of test queries against the API.
-
-## 📚 API Documentation
-
-For complete API documentation, including request/response formats and examples, see [API_DOCS.md](API_DOCS.md).
-
-## 🧪 Testing
-
-### Automated Tests
-
-Run the test suite to verify everything is working:
-
-```bash
-./run.sh test
-```
-
-### Manual Testing
-
-You can use tools like `curl` or Postman to test the API endpoints:
-
-```bash
-# Health check
-curl http://localhost:5000/api/health
-
-# Upload a file
-curl -X POST -F "file=@test_data/sample_data.csv" http://localhost:5000/api/upload
-
-# Analyze data
-curl -X POST -H "Content-Type: application/json" -d '{
-  "query": "What is the average salary?",
-  "file_path": "path/from/upload/endpoint"
-}' http://localhost:5000/api/analyze
-```
-
-## 🛠 Development
-
-### Project Structure
+### Project Structure (Detailed for Developers)
 
 ```
 src/
-  agents/          # Specialized agents (data, formula, viz, etc.)
-  chains/          # Agent orchestration flows
-  tools/           # Utilities and helper tool interfaces
-  llm/             # LLM client implementations
-  
-api.py            # Main API application
-test_api.py       # API test script
-run.sh            # Control script for the API
-requirements.txt   # Python dependencies
-.env.example      # Example environment variables
+  agents/          # Core logic for ControllerAgent, DataAnalysisAgent, etc.
+  llm/             # Client for interacting with Large Language Models (e.g., GeminiClient).
+  tools/           # Utility components like the IsolatedPythonExecutor.
+
+streamlit_app.py   # Main entry point for the Streamlit UI.
+api.py             # Legacy Flask API (consider for deprecation or separate maintenance).
+requirements.txt   # Python dependencies.
+.env.example       # Example for environment variables.
 ```
 
-### Adding New Features
+### Adding New Features (General Workflow)
 
-1. Create a new branch for your feature:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+1.  Create a new branch for your feature:
+    ```bash
+    git checkout -b feature/your-feature-name
+    ```
+2.  Implement your changes. Ensure to add relevant tests.
+3.  Test thoroughly:
+    *(Consider adding specific test commands if available, or describe manual testing procedures for the Streamlit app).*
+4.  Commit your changes with a descriptive message:
+    ```bash
+    git add .
+    git commit -m "Add your feature description"
+    ```
+5.  Push your changes and create a pull request against the `main` branch.
 
-2. Make your changes and test them:
-   ```bash
-   ./run.sh test
-   ```
+## Contributing
 
-3. Commit your changes with a descriptive message:
-   ```bash
-   git add .
-   git commit -m "Add your feature description"
-   ```
+Contributions are welcome! Please feel free to open an issue to discuss a bug or feature, or submit a pull request with your improvements.
+*(Consider creating a `CONTRIBUTING.md` file with more detailed guidelines if the project grows).*
 
-4. Push your changes and create a pull request.
+## License
 
-## 🤝 Contributing
+This project is licensed under the MIT License - see the `LICENSE` file for details (if one exists, otherwise state "MIT Licensed" or chosen license).
 
-Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md) before submitting pull requests.
+## Contact
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📧 Contact
-
-For questions or support, please open an issue on GitHub or contact [your-email@example.com](mailto:your-email@example.com).
-
-## 📊 Basic Usage
+For questions, support, or collaboration inquiries, please open an issue on the GitHub repository or contact [your-email@example.com](mailto:your-email@example.com) (replace with actual contact).
 
 ```bash
 # Profile a CSV file

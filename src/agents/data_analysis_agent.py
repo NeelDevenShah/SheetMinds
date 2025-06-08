@@ -205,6 +205,7 @@ class DataAnalysisAgent(BaseAgent):
         data_preview: Dict[str, Any],
         max_attempts: int = 3
     ) -> CodeGenerationResult:
+        logger.info(f"{self.agent_id}: Entering _generate_analysis_code for query: '{query[:50]}...'")
         """Generate analysis code using Gemini.
         
         Args:
@@ -215,48 +216,87 @@ class DataAnalysisAgent(BaseAgent):
         Returns:
             CodeGenerationResult containing the generated code and metadata
         """
-        from src.llm.gemini_client import CodeGenerationResult
+        # CodeGenerationResult is imported at the top of the file (from ..llm.gemini_client import ...)
         
         attempt = 0
         last_error = "Unknown error"
-        
+        code_gen_result: Optional[CodeGenerationResult] = None # Ensure it's defined for final return
+
         while attempt < max_attempts:
-            self.logger.info(f"Generating analysis code (attempt {attempt + 1}/{max_attempts})...")
-            result = await self.llm_client.generate_analysis_code(
-                query=query,
-                data_preview=data_preview
-            )
+            self.logger.info(f"{self.agent_id}: Generating analysis code (attempt {attempt + 1}/{max_attempts})...")
             
-            if not hasattr(result, 'success') or not hasattr(result, 'code'):
-                last_error = f"Unexpected result format from code generation: {result}"
-                self.logger.error(last_error)
+            logger.info(f"{self.agent_id}: Calling llm_client.generate_analysis_code in _generate_analysis_code. Attempt {attempt + 1}")
+            try:
+                code_gen_result = await self.llm_client.generate_analysis_code(
+                    query=query,
+                    data_preview=data_preview
+                )
+            except Exception as e:
+                self.logger.error(f"{self.agent_id}: Exception during llm_client.generate_analysis_code: {e}", exc_info=True)
+                last_error = f"Exception during LLM call: {str(e)}"
                 attempt += 1
+                if attempt < max_attempts:
+                    self.logger.info(f"{self.agent_id}: Retrying code generation after exception (attempt {attempt + 1}/{max_attempts})...")
+                    await asyncio.sleep(1) 
                 continue
-            
-            if result.success and result.code:
-                self.logger.info("Code generation successful")
+
+            if not isinstance(code_gen_result, CodeGenerationResult):
+                last_error = f"Unexpected result type from code generation: {type(code_gen_result)}. Expected CodeGenerationResult."
+                self.logger.error(f"{self.agent_id}: {last_error}")
+                attempt += 1
+                if attempt < max_attempts:
+                    await asyncio.sleep(1)
+                continue
+
+            if code_gen_result.success and code_gen_result.code is not None:
+                self.logger.info(f"{self.agent_id}: Code generation successful on attempt {attempt + 1}")
                 # Validate the generated code
-                if len(result.code) > self.config["max_code_length"]:
-                    error_msg = f"Generated code is too long ({len(result.code)} > {self.config['max_code_length']})"
-                    self.logger.error(error_msg)
+                if len(code_gen_result.code) > self.config["max_code_length"]:
+                    error_msg = f"Generated code is too long ({len(code_gen_result.code)} characters > {self.config['max_code_length']})"
+                    self.logger.error(f"{self.agent_id}: {error_msg}")
                     return CodeGenerationResult(
                         success=False,
-                        error=error_msg
+                        code="", # Ensure code is always a string
+                        error=error_msg,
+                        explanation=code_gen_result.explanation,
+                        model_name=code_gen_result.model_name,
+                        usage_metadata=code_gen_result.usage_metadata,
+                        raw_response=code_gen_result.raw_response
                     )
                     
-                # Ensure the code has the required result variable
-                if 'result = ' not in result.code and 'return ' not in result.code:
-                    self.logger.info("Adding default return statement to generated code")
-                    result.code += "\nresult = df"  # Default to returning the dataframe
+                # Ensure the code has the required result variable for the executor
+                if 'result = ' not in code_gen_result.code and 'return ' not in code_gen_result.code:
+                    self.logger.info(f"{self.agent_id}: Adding default 'result = df' to generated code as no 'result =' or 'return ' found.")
+                    code_gen_result.code += "\n\n# Ensure a 'result' variable is available for the executor\nresult = df"
                     
-                return result
+                return code_gen_result
             
-            last_error = getattr(result, 'error', 'No error message provided')
-            self.logger.warning(f"Code generation failed: {last_error}")
+            last_error = code_gen_result.error or 'No error message provided from LLM client'
+            self.logger.warning(f"{self.agent_id}: Code generation failed on attempt {attempt + 1}/{max_attempts}: {last_error}")
                 
             attempt += 1
             if attempt < max_attempts:
-                self.logger.warning(f"Retrying code generation (attempt {attempt + 1}/{max_attempts})...")
+                self.logger.info(f"{self.agent_id}: Retrying code generation (attempt {attempt + 1}/{max_attempts})...")
+                await asyncio.sleep(1) 
+            
+        final_error_msg = f"Failed to generate valid code after {max_attempts} attempts. Last error: {last_error}"
+        self.logger.error(f"{self.agent_id}: {final_error_msg}")
+        
+        # Ensure a CodeGenerationResult is returned even if all attempts fail or code_gen_result was never successfully assigned
+        raw_resp = getattr(code_gen_result, 'raw_response', None) if code_gen_result else None
+        model_n = getattr(code_gen_result, 'model_name', None) if code_gen_result else None
+        usage_m = getattr(code_gen_result, 'usage_metadata', None) if code_gen_result else None
+        expl = getattr(code_gen_result, 'explanation', None) if code_gen_result else None
+
+        return CodeGenerationResult(
+            success=False,
+            code="",
+            error=final_error_msg,
+            explanation=expl,
+            model_name=model_n,
+            usage_metadata=usage_m,
+            raw_response=raw_resp
+        )
             
         error_msg = f"Failed to generate valid code after {max_attempts} attempts: {last_error}"
         self.logger.error(error_msg)
@@ -477,10 +517,20 @@ print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
         
         # Generate analysis code
         self.logger.info("Generating analysis code...")
-        result = await self._generate_analysis_code(
-            query=query,
-            data_preview=data_preview
-        )
+        result = None # Initialize result
+        try:
+            self.logger.info(f"{self.agent_id}: Attempting to call and await self._generate_analysis_code")
+            result = await self._generate_analysis_code(
+                query=query,
+                data_preview=data_preview
+            )
+            self.logger.info(f"{self.agent_id}: Call to self._generate_analysis_code completed. Result success: {result.success if result else 'N/A'}")
+        except Exception as e_gen_code:
+            self.logger.error(f"{self.agent_id}: Exception occurred DIRECTLY during 'await self._generate_analysis_code': {str(e_gen_code)}", exc_info=True)
+            # Ensure a valid AgentResponse is returned or an error is raised appropriately
+            # For now, let's re-raise to see if it gets caught by a higher-level handler or stops execution here
+            # Depending on desired behavior, you might return an AgentResponse(success=False, error=...)
+            raise CodeExecutionError(f"Direct exception from _generate_analysis_code call: {str(e_gen_code)}")
         
         if not result.success:
             error_msg = f"Failed to generate analysis code: {result.error}"

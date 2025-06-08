@@ -6,38 +6,39 @@ pydantic>=1.9.0
 PyYAML>=6.0
 typing-extensions>=4.0.0
 
-# Web Framework
-flask>=2.0.0
-flask-cors>=3.0.10
-python-multipart>=0.0.5
-requests>=2.28.0
+# Web Framework / UI
+streamlit>=1.30.0
 
 # AI/ML
-langchain-google-genai>=0.0.5  # For Gemini API
+# Assuming GeminiClient uses google-generativeai directly.
+# If it uses langchain-google-genai, keep that instead or in addition.
+google-generativeai>=0.3.0 # Check for the version your GeminiClient needs
+langchain-google-genai>=0.0.5 # Keep if explicitly used by GeminiClient
 
 # Data Processing
 openpyxl>=3.0.9  # For Excel support
 pyarrow>=6.0.0  # For Parquet support
 
 # Async and Concurrency
+# Streamlit handles asyncio for its callbacks, but if agents use it directly:
 anyio>=3.6.0
-asyncio>=3.4.3
+# asyncio is part of Python's standard library, no need to list usually
 
-# Logging and Monitoring
+# Logging and Monitoring (Keep if agents use them)
 structlog>=21.1.0
 python-json-logger>=2.0.2
 
-# Testing
+# Testing (Keep for development)
 pytest>=7.0.0
 pytest-asyncio>=0.18.0
 pytest-cov>=3.0.0
 
-# Development Tools
+# Development Tools (Keep for development)
 black>=22.3.0
 isort>=5.10.1
 mypy>=0.910
 flake8>=4.0.0
 
-# Documentation
+# Documentation (Keep for development)
 sphinx>=4.5.0
 sphinx-rtd-theme>=1.0.0
