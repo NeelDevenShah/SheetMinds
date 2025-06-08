@@ -1,8 +1,58 @@
-# SheetMind Streamlit Application
+# SheetMind: AI-Powered Conversational Data Analysis
 
-This application provides a web interface for analyzing structured data files (CSV, Excel, Parquet) using AI.
+SheetMind transforms the way you interact with structured data. Instead of wrestling with complex formulas or code, simply ask questions in natural language and get instant insights, explanations, and the underlying analysis code.
 
-## Setup and Running
+## The Problem We Solve
+
+Analyzing data locked in spreadsheets (CSVs, Excel files) or other structured formats can be a significant hurdle. Many individuals and teams lack the specialized skills (like advanced Excel, SQL, or Python programming) or the time to perform in-depth data exploration. This often leads to:
+-   Underutilized data and missed opportunities.
+-   Time-consuming manual analysis prone to errors.
+-   Reliance on data specialists, creating bottlenecks.
+-   A desire for quick answers without a steep learning curve.
+
+SheetMind aims to break down these barriers, making data analysis accessible, intuitive, and efficient for everyone.
+
+## Our Solution: SheetMind
+
+SheetMind is an intelligent application that allows you to:
+-   **Upload your data files** (CSV, Excel, Parquet).
+-   **Ask questions in plain English** (e.g., "What are the average sales per product category?", "Show me customer growth trends.").
+-   **Receive comprehensive results**:
+    -   A direct textual answer.
+    -   A clear explanation of how the answer was derived.
+    -   The Python code generated and executed for the analysis.
+    -   A preview of the resulting data (if applicable).
+
+It's designed to feel like you're conversing with a data analyst who not only gives you answers but also shows you their work.
+
+## Key Features
+
+-   **Natural Language Queries:** No need to learn complex query languages.
+-   **Multi-Format Support:** Handles CSV, Excel (.xlsx, .xls), and Parquet files.
+-   **AI-Powered Code Generation:** Leverages Google's Gemini LLM to generate Python (pandas) code dynamically.
+-   **Transparent Analysis:** See the exact code used, promoting trust and learning.
+-   **Step-by-Step Explanations:** Understand the "how" behind the "what."
+-   **Safe Code Execution:** AI-generated code runs in an isolated sandbox environment.
+-   **User-Friendly Interface:** Built with Streamlit for an intuitive web experience.
+-   **Extensible Agentic Architecture:** Built with a modular system of AI agents.
+
+## How it Works (High-Level Architecture)
+
+SheetMind employs an agent-based system:
+1.  **Streamlit UI:** Provides the interface for file upload and query input.
+2.  **ControllerAgent:** Orchestrates the workflow, manages requests, and interacts with other agents.
+3.  **DataAnalysisAgent:**
+    -   Loads the data.
+    -   Communicates with the Gemini LLM (`GeminiClient`) to understand the query and generate appropriate Python code.
+    -   Executes the generated code safely in an `IsolatedPythonExecutor`.
+    -   Uses the LLM again to generate explanations of the results and code.
+4.  **Results Display:** The UI presents the findings from the agents.
+
+## Current Implementation: Streamlit Application
+
+The primary way to interact with SheetMind is through its Streamlit web application.
+
+### Setup and Running
 
 1.  **Prerequisites**:
     *   Python 3.8+
@@ -35,7 +85,7 @@ This application provides a web interface for analyzing structured data files (C
     ```
     This will start the Streamlit server, and the application should open in your web browser.
 
-## How to Use
+### How to Use the Streamlit App
 
 1.  **Upload Data**: Click on "Choose a data file" to upload your CSV, Excel, or Parquet file.
 2.  **Enter Query**: Type your data analysis question in the text area (e.g., "What are the average sales per product category?").
@@ -65,139 +115,70 @@ SheetMinds/
 │   └── tools/
 │       ├── __init__.py
 │       └── isolated_python_executor.py
-└── uploads/              # Default folder for uploads (created by Flask app, not directly used by Streamlit temp files)
+├── API_DOCS.md           # Detailed documentation for the legacy API
+└── uploads/              # Default folder for uploads (used by legacy Flask app)
 ```
+*(Note: The `uploads/` directory and `API_DOCS.md` primarily relate to a previous Flask-based API version of SheetMind.)*
 
-## Notes
+## Future Plans
 
-*   The Streamlit app uses a temporary file for uploads, which is deleted after processing.
-*   Ensure your `GOOGLE_API_KEY` is correctly set in the `.env` file for the AI analysis to work.
-*   The `src` directory containing the agent logic must be in the same directory as `streamlit_app.py` or accessible via `PYTHONPATH`.
+SheetMind is an evolving project. Some potential future enhancements include:
+-   **Enhanced Visualization Capabilities:** Integration with more advanced charting libraries for richer data storytelling.
+-   **Support for More Data Sources:** Connections to databases (SQL, NoSQL), cloud storage (S3, GCS), and other data platforms.
+-   **Advanced Data Cleaning & Preparation Tools:** AI-assisted data wrangling features.
+-   **Proactive Insights & Anomaly Detection:** Agents that can automatically identify interesting patterns or outliers.
+-   **Collaboration Features:** Allowing multiple users to work on and discuss analyses.
+-   **Customizable Agent Behaviors:** More fine-grained control over how agents perform tasks.
+-   **Expanded LLM Support:** Option to use other leading Large Language Models.
 
+*(Your contributions and ideas for future development are welcome!)*
 
-## 🚀 Quick Start
+## Development
 
-### Running the API Server
+This section is for developers looking to contribute or understand the codebase more deeply.
 
-You can start the API server using the provided control script:
-
-```bash
-# Make the script executable (only needed once)
-chmod +x run.sh
-
-# Start the server
-./run.sh start
-
-# Or use the interactive menu
-./run.sh
-```
-
-This will start the Flask API server on port 5000 by default. If port 5000 is in use, it will automatically find the next available port.
-
-### API Endpoints
-
-The API provides the following endpoints:
-
-- `GET /api/health` - Health check
-- `POST /api/upload` - Upload a file for analysis
-- `POST /api/analyze` - Analyze data with a natural language query
-- `POST /api/profile` - Generate a data profile
-
-For detailed API documentation, see [API_DOCS.md](API_DOCS.md).
-
-### Running Tests
-
-To run the test suite:
-
-```bash
-./run.sh test
-```
-
-This will execute a series of test queries against the API.
-
-## 📚 API Documentation
-
-For complete API documentation, including request/response formats and examples, see [API_DOCS.md](API_DOCS.md).
-
-## 🧪 Testing
-
-### Automated Tests
-
-Run the test suite to verify everything is working:
-
-```bash
-./run.sh test
-```
-
-### Manual Testing
-
-You can use tools like `curl` or Postman to test the API endpoints:
-
-```bash
-# Health check
-curl http://localhost:5000/api/health
-
-# Upload a file
-curl -X POST -F "file=@test_data/sample_data.csv" http://localhost:5000/api/upload
-
-# Analyze data
-curl -X POST -H "Content-Type: application/json" -d '{
-  "query": "What is the average salary?",
-  "file_path": "path/from/upload/endpoint"
-}' http://localhost:5000/api/analyze
-```
-
-## 🛠 Development
-
-### Project Structure
+### Project Structure (Detailed for Developers)
 
 ```
 src/
-  agents/          # Specialized agents (data, formula, viz, etc.)
-  chains/          # Agent orchestration flows
-  tools/           # Utilities and helper tool interfaces
-  llm/             # LLM client implementations
-  
-api.py            # Main API application
-test_api.py       # API test script
-run.sh            # Control script for the API
-requirements.txt   # Python dependencies
-.env.example      # Example environment variables
+  agents/          # Core logic for ControllerAgent, DataAnalysisAgent, etc.
+  llm/             # Client for interacting with Large Language Models (e.g., GeminiClient).
+  tools/           # Utility components like the IsolatedPythonExecutor.
+
+streamlit_app.py   # Main entry point for the Streamlit UI.
+api.py             # Legacy Flask API (consider for deprecation or separate maintenance).
+requirements.txt   # Python dependencies.
+.env.example       # Example for environment variables.
 ```
 
-### Adding New Features
+### Adding New Features (General Workflow)
 
-1. Create a new branch for your feature:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+1.  Create a new branch for your feature:
+    ```bash
+    git checkout -b feature/your-feature-name
+    ```
+2.  Implement your changes. Ensure to add relevant tests.
+3.  Test thoroughly:
+    *(Consider adding specific test commands if available, or describe manual testing procedures for the Streamlit app).*
+4.  Commit your changes with a descriptive message:
+    ```bash
+    git add .
+    git commit -m "Add your feature description"
+    ```
+5.  Push your changes and create a pull request against the `main` branch.
 
-2. Make your changes and test them:
-   ```bash
-   ./run.sh test
-   ```
+## Contributing
 
-3. Commit your changes with a descriptive message:
-   ```bash
-   git add .
-   git commit -m "Add your feature description"
-   ```
+Contributions are welcome! Please feel free to open an issue to discuss a bug or feature, or submit a pull request with your improvements.
+*(Consider creating a `CONTRIBUTING.md` file with more detailed guidelines if the project grows).*
 
-4. Push your changes and create a pull request.
+## License
 
-## 🤝 Contributing
+This project is licensed under the MIT License - see the `LICENSE` file for details (if one exists, otherwise state "MIT Licensed" or chosen license).
 
-Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md) before submitting pull requests.
+## Contact
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📧 Contact
-
-For questions or support, please open an issue on GitHub or contact [your-email@example.com](mailto:your-email@example.com).
-
-## 📊 Basic Usage
+For questions, support, or collaboration inquiries, please open an issue on the GitHub repository or contact [your-email@example.com](mailto:your-email@example.com) (replace with actual contact).
 
 ```bash
 # Profile a CSV file
